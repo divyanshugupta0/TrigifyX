@@ -40,15 +40,15 @@
     </div>
   </main>
 
-  <!-- TrigifyX: paste before </body> on every page with a form -->
-  <!-- Also upload js/trigifyx-capture.js to your site (same folder as this page) -->
+  <!-- TrigifyX: paste this before </body> on every page with a form. -->
+  <!-- No file upload needed — the script is served from the TrigifyX Worker. -->
   <script>
     window.TRIGIFYX = {
       accessToken: "52a1e1ad87a8e92ced665d6810f2b0c7720fb3fe4a878fbd3c555871843c7877244fca73",
       endpoint: "https://trigify.divyanshugupta415.workers.dev"
     };
   </script>
-  <script src="js/trigifyx-capture.js" defer></script>
+  <script src="https://trigify.divyanshugupta415.workers.dev/trigifyx-capture.js" defer></script>
 
   <script>
     // Just show a friendly message on submit (native submission still proceeds).
