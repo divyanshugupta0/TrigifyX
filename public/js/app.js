@@ -1,0 +1,342 @@
+/* TrigifyX — frontend app (Firebase v9+ modular SDK)
+ * Flow:
+ *  1. User signs up / logs in (Firebase Auth)
+ *  2. On first login we create a profile in Realtime Database with an API key
+ *  3. User links their Telegram account (chat id or @username) -> stored in RTDB
+ *  4. Site generates an embeddable <script> snippet the user adds to their site
+ *  5. The snippet captures form submits and forwards them to TrigifyXbot -> user's Telegram
+ */
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  updateProfile,
+  GoogleAuthProvider,
+  signInWithPopup
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import {
+  ref,
+  set,
+  get
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
+
+const ENV = window.__ENV__ || {};
+const BOT_USERNAME = "TrigifyXbot";
+
+let currentUser = null;
+
+/* ---------- Demo-mode storage (localStorage) ---------- */
+const Demo = {
+  profile(uid) {
+    return JSON.parse(localStorage.getItem("tgx_profile_" + uid) || "null");
+  },
+  saveProfile(uid, p) {
+    localStorage.setItem("tgx_profile_" + uid, JSON.stringify(p));
+  },
+  user(uid) {
+    return JSON.parse(localStorage.getItem("tgx_user_" + uid) || "null");
+  },
+  saveUser(u, p) {
+    localStorage.setItem("tgx_user_" + u.uid, JSON.stringify(u));
+    if (p) this.saveProfile(u.uid, p);
+  },
+};
+
+function demoMode() {
+  const f = window.__fb || {};
+  return !f.db || window.__DEMO__ === true;
+}
+
+/* ---------- Helpers ---------- */
+function $(s) { return document.querySelector(s); }
+function uid() { return "u_" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
+function apiKey() {
+  const r = () => Math.random().toString(36).slice(2);
+  return "tgx_" + r() + r() + r();
+}
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove("show"), 2200);
+}
+function copy(text) {
+  navigator.clipboard.writeText(text).then(() => toast("Copied to clipboard"));
+}
+
+/* ---------- Auth ---------- */
+async function signUp(email, password, name, telegram) {
+  const auth = (window.__fb || {}).auth;
+  const db = (window.__fb || {}).db;
+  const profile = {
+    uid: "", email, name: name || "", telegram: telegram || "",
+    apiKey: apiKey(), createdAt: Date.now(), plan: "free"
+  };
+  if (demoMode()) {
+    const u = { uid: uid(), email, name: profile.name, telegram: profile.telegram };
+    Demo.saveUser(u, profile);
+    profile.uid = u.uid;
+    return u;
+  }
+  const cred = await createUserWithEmailAndPassword(auth, email, password);
+  profile.uid = cred.user.uid;
+  if (name) {
+    try { await updateProfile(cred.user, { displayName: name }); } catch (e) {}
+  }
+  await set(ref(db, "users/" + cred.user.uid), profile);
+  return cred.user;
+}
+
+async function signIn(email, password) {
+  const auth = (window.__fb || {}).auth;
+  if (demoMode()) {
+    const all = Object.keys(localStorage)
+      .filter(k => k.startsWith("tgx_user_"))
+      .map(k => JSON.parse(localStorage.getItem(k)))
+      .find(u => u.email === email);
+    if (!all) throw new Error("No demo account with that email. Sign up first.");
+    return all;
+  }
+  const cred = await signInWithEmailAndPassword(auth, email, password);
+  return cred.user;
+}
+
+async function signInWithGoogle() {
+  const auth = (window.__fb || {}).auth;
+  if (demoMode()) {
+    const u = { uid: uid(), email: "demo.google@trigifyx.app", name: "Google User", telegram: "" };
+    const prof = { uid: u.uid, email: u.email, name: u.name, telegram: "", apiKey: apiKey(), createdAt: Date.now(), plan: "free" };
+    Demo.saveUser(u, prof);
+    return u;
+  }
+  const provider = new GoogleAuthProvider();
+  const cred = await signInWithPopup(auth, provider);
+  return cred.user;
+}
+
+async function getProfile(u) {
+  const db = (window.__fb || {}).db;
+  if (demoMode()) return Demo.profile(u.uid);
+  const snap = await get(ref(db, "users/" + u.uid));
+  return snap.val();
+}
+async function saveProfile(u, p) {
+  const db = (window.__fb || {}).db;
+  if (demoMode()) return Demo.saveProfile(u.uid, p);
+  return set(ref(db, "users/" + u.uid), p);
+}
+
+/* ---------- UI rendering ---------- */
+function showAuth() {
+  $("#auth-view").classList.remove("hide");
+  $("#app-view").classList.add("hide");
+}
+function showApp() {
+  $("#auth-view").classList.add("hide");
+  $("#app-view").classList.remove("hide");
+}
+
+function renderProfile(p) {
+  $("#disp-name").textContent = p.name || "—";
+  $("#disp-email").textContent = p.email;
+  $("#disp-tg").textContent = p.telegram || "—";
+  $("#disp-apikey").textContent = p.apiKey;
+  $("#tg-input").value = p.telegram || "";
+  $("#disp-plan").textContent = p.plan || "free";
+  $("#disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
+
+  const linked = !!p.telegram;
+  $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
+  $("#tg-status").textContent = linked ? "Linked" : "Not linked";
+
+  renderSnippet(p);
+}
+
+function renderSnippet(p) {
+  // The capture script is served from Netlify (24/7, pure static).
+  const SCRIPT_BASE = ENV.scriptBase || "https://trigifyx.netlify.app";
+  const scriptSrc = SCRIPT_BASE.replace(/\/$/, "") + "/js/trigifyx-capture.js";
+
+  // Pure-frontend delivery: the bot token is injected at deploy time
+  // (Netlify env var -> window.__ENV__.botToken via env-injected.js), so the
+  // snippet posts submissions straight from the browser to Telegram. No backend.
+  const deliveryLine = ENV.botToken
+    ? '  token: "' + ENV.botToken + '",'
+    : "";
+
+  const snippet =
+`<!-- TrigifyX: paste before </body> on every page with a form -->
+<script>
+  window.TRIGIFYX = {
+    apiKey: "${p.apiKey}",${deliveryLine}
+    bot: "${BOT_USERNAME}",
+    telegram: "${p.telegram || "<YOUR_TELEGRAM_CHAT>"}"
+  };
+</script>
+<script src="${scriptSrc}" defer></script>`;
+
+  $("#snippet").textContent = snippet;
+  window.__lastSnippet = snippet;
+}
+
+/* ---------- Wire up ---------- */
+function bindUI() {
+  $("#tab-signin").onclick = () => switchTab("in");
+  $("#tab-signup").onclick = () => switchTab("up");
+
+  $("#auth-google").onclick = async () => {
+    $("#auth-google").disabled = true;
+    try {
+      const u = await signInWithGoogle();
+      await onLogin(u);
+    } catch (e) {
+      toast(e.message || "Google sign-in failed");
+    } finally {
+      $("#auth-google").disabled = false;
+    }
+  };
+
+  $("#auth-submit").onclick = async () => {
+    const email = $("#auth-email").value.trim();
+    const pass = $("#auth-pass").value;
+    const isUp = $("#auth-mode").value === "up";
+
+    if (isUp) {
+      const name = $("#auth-name").value.trim();
+      const tg = $("#auth-tg").value.trim();
+      const pass2 = $("#auth-pass2").value;
+      if (!name) return toast("Enter your full name");
+      if (!email || !pass) return toast("Enter email and password");
+      if (pass.length < 6) return toast("Password must be at least 6 characters");
+      if (pass !== pass2) return toast("Passwords do not match");
+      $("#auth-submit").disabled = true;
+      try {
+        const u = await signUp(email, pass, name, tg);
+        await onLogin(u);
+      } catch (e) {
+        toast(e.message || "Sign up failed");
+      } finally {
+        $("#auth-submit").disabled = false;
+      }
+      return;
+    }
+
+    if (!email || !pass) return toast("Enter email and password");
+    $("#auth-submit").disabled = true;
+    try {
+      const u = await signIn(email, pass);
+      await onLogin(u);
+    } catch (e) {
+      toast(e.message || "Auth failed");
+    } finally {
+      $("#auth-submit").disabled = false;
+    }
+  };
+
+  $("#logout").onclick = async () => {
+    if (!demoMode() && auth) await signOut(auth);
+    currentUser = null;
+    showAuth();
+  };
+
+  $("#tg-save").onclick = async () => {
+    const val = $("#tg-input").value.trim();
+    if (!val) return toast("Enter a Telegram chat id or @username");
+    const p = await getProfile(currentUser);
+    p.telegram = val;
+    await saveProfile(currentUser, p);
+    renderProfile(p);
+    toast("Telegram account linked");
+  };
+
+  $("#copy-key").onclick = () => copy($("#disp-apikey").textContent);
+  $("#copy-snippet").onclick = () => copy(window.__lastSnippet || "");
+
+  $("#regen").onclick = async () => {
+    const p = await getProfile(currentUser);
+    p.apiKey = apiKey();
+    await saveProfile(currentUser, p);
+    renderProfile(p);
+    toast("New API key generated");
+  };
+}
+
+function switchTab(mode) {
+  $("#auth-mode").value = mode;
+  const up = mode === "up";
+  $("#tab-signup").classList.toggle("active", up);
+  $("#tab-signin").classList.toggle("active", !up);
+  $("#auth-title").textContent = up ? "Create your TrigifyX account" : "Welcome back to TrigifyX";
+  $("#auth-submit").textContent = up ? "Sign up" : "Sign in";
+  const show = up ? "remove" : "add";
+  $("#signup-only").classList[show]("hide");
+  $("#signup-only-2").classList[show]("hide");
+  if (!up) {
+    $("#auth-name").value = "";
+    $("#auth-tg").value = "";
+    $("#auth-pass2").value = "";
+  }
+}
+
+async function onLogin(u) {
+  currentUser = u;
+  let p = await getProfile(u);
+  if (!p) {
+    p = { uid: u.uid, email: u.email, apiKey: apiKey(), telegram: "", createdAt: Date.now(), plan: "free" };
+    await saveProfile(u, p);
+  }
+  // If a Google/SSO user is missing required details, force profile completion.
+  const missing = !p.name || !p.telegram;
+  if (missing) {
+    showProfileComplete(u, p);
+    return;
+  }
+  $("#disp-uid").textContent = u.uid;
+  renderProfile(p);
+  showApp();
+}
+
+function showProfileComplete(u, p) {
+  showAuth(); // hide dashboard
+  $("#auth-view").classList.add("hide");
+  $("#complete-view").classList.remove("hide");
+  $("#complete-email").textContent = u.email || p.email || "—";
+  $("#complete-name").value = p.name || (u.displayName || "");
+  $("#complete-tg").value = p.telegram || "";
+  $("#complete-save").onclick = async () => {
+    const name = $("#complete-name").value.trim();
+    const tg = $("#complete-tg").value.trim();
+    if (!name) return toast("Please enter your full name");
+    if (!tg) return toast("Please enter your Telegram username or chat id");
+    p.name = name;
+    p.telegram = tg;
+    await saveProfile(u, p);
+    $("#complete-view").classList.add("hide");
+    $("#disp-uid").textContent = u.uid;
+    renderProfile(p);
+    showApp();
+  };
+}
+
+/* ---------- Boot ---------- */
+function boot() {
+  bindUI();
+  switchTab("up");
+  const auth = (window.__fb || {}).auth;
+  if (!demoMode() && auth) {
+    onAuthStateChanged(auth, async (u) => {
+      if (u) await onLogin(u);
+      else showAuth();
+    });
+  } else {
+    showAuth();
+  }
+}
+
+if ((window.__fb || {}).auth) {
+  boot();
+} else {
+  window.addEventListener("fb-ready", boot);
+}

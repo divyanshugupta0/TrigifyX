@@ -1,0 +1,20 @@
+/* TrigifyX — site configuration (gitignored, do NOT commit).
+ *
+ * Copy this file to public/js/config.js and fill in your real values.
+ * Alternatively, have your host inject window.__ENV__ before app.js loads.
+ */
+window.__ENV__ = {
+  // Firebase web config (Realtime Database + Auth)
+  firebase: {
+    apiKey: "YOUR_FIREBASE_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT",
+    appId: "YOUR_FIREBASE_APP_ID"
+  },
+
+  // Optional: if your backend is hosted separately (e.g. on Render),
+  // set this so the embeddable script routes submissions through it
+  // instead of calling Telegram directly from the browser.
+  // backendUrl: "https://trigifyx-backend.onrender.com"
+};

@@ -1,0 +1,9 @@
+{
+  "name": "trigifyx",
+  "version": "1.0.0",
+  "description": "TrigifyX - connect any HTML form to your Telegram bot (pure frontend)",
+  "scripts": {
+    "dev": "npx serve public",
+    "build": "echo \"static site\""
+  }
+}
