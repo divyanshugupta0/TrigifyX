@@ -167,26 +167,21 @@ function renderProfile(p) {
   $("#disp-plan").textContent = p.plan || "free";
   $("#disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
 
-  const linked = !!p.telegram;
-
   // API key is hidden until the user issues it.
   const issued = window.__apikeyIssued;
   $("#apikey-locked").classList.toggle("hide", issued);
   $("#apikey-revealed").classList.toggle("hide", !issued);
   $("#issue-key").classList.toggle("hide", issued);
 
-  // Telegram card: linked vs setup.
-  $("#tg-linked").classList.toggle("hide", !linked);
-  $("#tg-setup").classList.toggle("hide", linked);
-  if (linked) {
-    $("#disp-tg-linked").textContent = p.telegram;
-  } else {
-    $("#tg-status").className = "badge warn";
-    $("#tg-status").textContent = "Not Linked";
-  }
+  // Telegram card always shows the instructions + chat id input.
+  // (No separate "linked" state — the chat id is editable any time.)
+  const linked = !!p.telegram;
+  $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
+  $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
+  $("#tg-input").value = p.telegram || "";
 
-  // Install snippet only visible after issuing the key AND before linking.
-  const showInstall = issued && !linked;
+  // Install snippet shows immediately after the key is issued (not later).
+  const showInstall = issued;
   $("#install-card").classList.toggle("hide", !showInstall);
 
   // Pre-fill the saved website URL.
@@ -308,19 +303,6 @@ function bindUI() {
     await saveProfile(currentUser, p);
     renderProfile(p);
     toast("Website saved");
-  };
-
-  // Linked users can change their Telegram destination.
-  $("#tg-unlink").onclick = async () => {
-    const p = await getProfile(currentUser);
-    p.telegram = "";
-    await saveProfile(currentUser, p);
-    const db = (window.__fb || {}).db;
-    if (db && p.accessToken) {
-      await set(ref(db, "pub/" + p.accessToken + "/telegram"), "");
-    }
-    renderProfile(p);
-    toast("Telegram unlinked. Enter a new chat id.");
   };
 
   $("#copy-key").onclick = () => copy($("#disp-apikey").textContent);

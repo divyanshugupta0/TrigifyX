@@ -592,120 +592,87 @@
 
                 </h2>
 
-                <!-- Linked state: just the chat id + details -->
+                <p class="lead">
+
+                    Follow the steps below to get your Telegram Chat ID, then
+                    paste it here. This is where your form submissions are sent.
+
+                </p>
+
                 <div
-                    id="tg-linked"
-                    class="hide">
+                    id="tg-steps">
 
-                    <div class="kv">
+                    <ol class="steps">
 
-                        <span class="k">Linked Telegram</span>
+                        <li>
 
-                        <span
-                            class="v"
-                            id="disp-tg-linked">
+                            <h3>Open Telegram</h3>
 
-                            —
+                            <p>
+                                Search for
+                                <strong>@TrigifyXbot</strong>
+                                and open the chat.
+                            </p>
 
-                        </span>
+                        </li>
 
-                    </div>
+                        <li>
 
-                    <div class="row mt">
+                            <h3>Start the bot</h3>
 
-                        <span class="badge ok">Connected</span>
+                            <p>
+                                Tap the
+                                <code>/start</code>
+                                button or send
+                                <code>/start</code>
+                                to get your Chat ID.
+                            </p>
 
-                        <button
-                            class="btn ghost"
-                            id="tg-unlink">
+                        </li>
 
-                            Change
+                        <li>
 
-                        </button>
+                            <h3>Copy your Chat ID</h3>
 
-                    </div>
+                            <p>
+                                The bot replies with your numeric Chat ID.
+                                Copy it and paste it below.
+                            </p>
+
+                        </li>
+
+                    </ol>
 
                 </div>
 
-                <!-- Setup state: steps + chat id -->
-                <div id="tg-setup">
+                <label>
 
-                    <div
-                        id="tg-steps">
+                    Telegram Chat ID
 
-                        <ol class="steps">
+                </label>
 
-                            <li>
+                <input
+                    id="tg-input"
+                    type="text"
+                    placeholder="123456789">
 
-                                <h3>Open Telegram</h3>
+                <div class="row mt">
 
-                                <p>
-                                    Search for
-                                    <strong>@TrigifyXbot</strong>
-                                    and open the chat.
-                                </p>
+                    <span
+                        class="badge warn"
+                        id="tg-status">
 
-                            </li>
+                        Not Linked
 
-                            <li>
+                    </span>
 
-                                <h3>Start the bot</h3>
+                    <button
+                        class="btn"
+                        id="tg-save">
 
-                                <p>
-                                    Tap the
-                                    <code>/start</code>
-                                    button or send
-                                    <code>/start</code>
-                                    to get your Chat ID.
-                                </p>
+                        Save & Link
 
-                            </li>
-
-                            <li>
-
-                                <h3>Copy your Chat ID</h3>
-
-                                <p>
-                                    The bot replies with your numeric Chat ID.
-                                    Copy it and paste it below.
-                                </p>
-
-                            </li>
-
-                        </ol>
-
-                    </div>
-
-                    <label>
-
-                        Telegram Chat ID
-
-                    </label>
-
-                    <input
-                        id="tg-input"
-                        type="text"
-                        placeholder="123456789">
-
-                    <div class="row mt">
-
-                        <span
-                            class="badge warn"
-                            id="tg-status">
-
-                            Not Linked
-
-                        </span>
-
-                        <button
-                            class="btn"
-                            id="tg-save">
-
-                            Save & Link
-
-                        </button>
-
-                    </div>
+                    </button>
 
                 </div>
 
