@@ -1,47 +1,47 @@
 /*
  * TrigifyX Cloudflare Worker
  * --------------------------
- * Edge-delivered backend that replaces (or complements) the Node server.
- * The TrigifyX frontend — deployed on ANY platform (Netlify, Vercel, GitHub
- * Pages, a plain VPS, etc.) — simply POSTs form submissions to this Worker.
+ * Edge-delivered backend. The TrigifyX frontend (deployed on ANY platform)
+ * POSTs form submissions to this Worker. The Worker authenticates with the
+ * per-user accessToken, resolves the destination chat id from Firebase
+ * Realtime Database via the REST API, and sends to Telegram. The bot token
+ * stays 100% in Worker secrets — never in the browser.
  *
- * Flow on POST /api/submit  { accessToken, fields, page }:
- *   1. Validate the per-user accessToken.
- *   2. Resolve the destination chat id from Firebase Realtime Database via the
- *      REST API:  GET <DB>/pub/<token>/telegram.json  (public read rule).
- *   3. Send the message to Telegram using the bot token (kept in Worker secrets,
- *      never exposed to the browser).
+ * IMPORTANT (Cloudflare variable naming):
+ *   Worker variable/secret NAMES may contain ONLY letters, numbers and
+ *   underscores — no dots. So name them exactly:
+ *     TELEGRAM_BOT_TOKEN   (secret)  -> your @BotFather token
+ *     FIREBASE_DB_URL      (var)     -> https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app
+ *     ALLOWED_ORIGINS      (optional)-> comma-separated origins; default "*"
+ *   Do NOT name a variable "window.ENV.apiBase" or anything with a dot.
  *
- * Why a Worker: runs globally at the edge, scales to zero, no server to manage,
- * and the bot token stays 100% server-side.
- *
- * Env / secrets (set via wrangler.toml or `wrangler secret put`):
- *   TELEGRAM_BOT_TOKEN   BotFather token for @TrigifyXbot
- *   FIREBASE_DB_URL      Realtime Database URL, e.g.
- *                        https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app
- *   ALLOWED_ORIGINS      (optional) comma-separated CORS origins; "*" = any
+ * Endpoints:
+ *   GET  /            -> status page (shows whether secrets are configured)
+ *   GET  /health      -> { ok: true }
+ *   POST /api/submit  -> body { accessToken, fields, page }
  */
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // CORS preflight
     if (request.method === "OPTIONS") {
       return corsResponse(new Response(null, { status: 204 }), env);
     }
 
     if (url.pathname === "/health" || url.pathname === "/") {
-      const configured = !!(env.TELEGRAM_BOT_TOKEN && env.FIREBASE_DB_URL);
+      const configured = !!(
+        getEnv(env, "TELEGRAM_BOT_TOKEN", "BOT_TOKEN") &&
+        getEnv(env, "FIREBASE_DB_URL", "DB_URL")
+      );
       return json({
         ok: true,
         service: "trigifyx-worker",
         configured,
-        note: "POST your form submissions to /api/submit",
+        note: "POST form submissions to /api/submit",
       });
     }
 
-    // Accept /api/submit with or without a trailing slash.
     const path = url.pathname.replace(/\/+$/, "");
     if (path === "/api/submit" && request.method === "POST") {
       return handleSubmit(request, env);
@@ -54,9 +54,23 @@ export default {
   },
 };
 
+// Read an env value trying one or more allowed names.
+function getEnv(env, ...names) {
+  for (const n of names) {
+    if (env[n]) return env[n];
+  }
+  return "";
+}
+
 async function handleSubmit(request, env) {
-  if (!env.TELEGRAM_BOT_TOKEN) {
-    return json({ ok: false, error: "server misconfigured" }, 500);
+  const botToken = getEnv(env, "TELEGRAM_BOT_TOKEN", "BOT_TOKEN");
+  const dbUrlBase = getEnv(env, "FIREBASE_DB_URL", "DB_URL");
+
+  if (!botToken) {
+    return json({ ok: false, error: "server misconfigured (bot token)" }, 500);
+  }
+  if (!dbUrlBase) {
+    return json({ ok: false, error: "server misconfigured (db url)" }, 500);
   }
 
   let payload;
@@ -74,11 +88,7 @@ async function handleSubmit(request, env) {
     return json({ ok: false, error: "missing fields" }, 400);
   }
 
-  // Resolve destination chat id from Firebase (RTDB REST, public read).
-  const dbUrl = (env.FIREBASE_DB_URL || "").replace(/\/$/, "");
-  if (!dbUrl) {
-    return json({ ok: false, error: "server misconfigured (db)" }, 500);
-  }
+  const dbUrl = dbUrlBase.replace(/\/$/, "");
   let chatId = null;
   try {
     const r = await fetch(
@@ -98,11 +108,10 @@ async function handleSubmit(request, env) {
     );
   }
 
-  // Build + send the Telegram message.
   const text = buildMessage(fields, page);
   try {
     const res = await fetch(
-      "https://api.telegram.org/bot" + env.TELEGRAM_BOT_TOKEN + "/sendMessage",
+      "https://api.telegram.org/bot" + botToken + "/sendMessage",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,11 +165,9 @@ function json(obj, status = 200) {
 }
 
 function corsResponse(res, env) {
-  const origin = "";
   res.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.headers.set("Access-Control-Allow-Headers", "Content-Type");
-  // Allow any origin by default; restrict via ALLOWED_ORIGINS if desired.
-  const allowed = (env.ALLOWED_ORIGINS || "*")
+  const allowed = (getEnv(env, "ALLOWED_ORIGINS", "ALLOWED_ORIGIN") || "*")
     .split(",")
     .map((s) => s.trim());
   if (allowed[0] === "*") {
