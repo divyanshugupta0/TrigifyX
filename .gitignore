@@ -5,8 +5,14 @@ node_modules/
 *.log
 .DS_Store
 
+# Node backend secrets / deps
+server/node_modules/
+server/.env
+server/firebase-service-account.json
+
 # Non-frontend (deployed separately): Python bot for cloud.tranger.xyz
 bot/
 
 # Real site config with secrets — keep example only
 public/js/config.js
+

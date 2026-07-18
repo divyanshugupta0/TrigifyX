@@ -193,21 +193,26 @@ function renderProfile(p) {
 function renderSnippet(p) {
   // The capture script is served from the user's OWN site by default
   // (relative path), so it works without depending on an external host.
+  // The capture script is served from the user's OWN site by default
+  // (relative path), so it works without depending on an external host.
   // Override with ENV.scriptBase only if you host it elsewhere.
   const SCRIPT_BASE = ENV.scriptBase || "";
   const scriptSrc = (SCRIPT_BASE.replace(/\/$/, "") + "/js/trigifyx-capture.js").replace(/^\//, "");
 
-  // SECURITY: the public snippet contains ONLY the per-user access token.
-  // The Telegram destination (chat id / @username) and the bot token are
-  // resolved at runtime from Firebase — never embedded in the page source.
-  // This keeps the user's apiKey and Telegram chat id out of their HTML.
+  // The backend that actually delivers to Telegram (bot token stays server-side).
+  const ENDPOINT = ENV.apiBase || "";
+
+  // SECURITY: the public snippet contains ONLY the per-user access token
+  // and the backend endpoint. The Telegram destination (chat id) and the bot
+  // token are resolved server-side — never embedded in the page source.
   const token = p.accessToken || "";
+  const endpointLine = ENDPOINT ? '\n    endpoint: "' + ENDPOINT + '",' : "";
   const snippet =
 `<!-- TrigifyX: paste before </body> on every page with a form -->
 <!-- Also upload js/trigifyx-capture.js to your site (same folder as this page) -->
 <script>
   window.TRIGIFYX = {
-    accessToken: "${token}"
+    accessToken: "${token}",${endpointLine}
   };
 </script>
 <script src="${scriptSrc}" defer></script>`;

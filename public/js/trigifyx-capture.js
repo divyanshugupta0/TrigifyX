@@ -1,13 +1,12 @@
-/* TrigifyX capture script (pure frontend, secure)
+/* TrigifyX capture script (secure, backend-delivered)
  *
  * Embeds on the user's site. On form submit it:
  *   1. Reads window.TRIGIFYX.accessToken (per-user, un-guessable).
- *   2. Fetches the destination chat id from Firebase (pub/<accessToken>),
- *      so the chat id is NEVER in the page source.
- *   3. Sends the submission straight to Telegram via the bot token
- *      (injected from deploy env into window.__ENV__.botToken).
+ *   2. POSTs the submission to the TrigifyX backend (apiBase + /api/submit).
+ *   3. The backend resolves the destination chat id from Firebase and sends
+ *      the message to Telegram. The bot token NEVER reaches the browser.
  *
- * No apiKey/chatId hardcoded in the snippet. No backend server.
+ * No apiKey/chatId/botToken hardcoded in the snippet.
  */
 (function () {
   var cfg = window.TRIGIFYX || {};
@@ -17,10 +16,15 @@
     return;
   }
 
+  // Where the backend lives. Set window.TRIGIFYX.endpoint or ENV.apiBase.
+  var API_BASE = (cfg.endpoint || ENV.apiBase || "").replace(/\/$/, "");
+  if (!API_BASE) {
+    console.warn("[TrigifyX] No endpoint configured (window.TRIGIFYX.endpoint). Capture disabled.");
+    return;
+  }
+
   var QUEUE_KEY = "trigifyx_queue_v1";
   var DELIVERED_KEY = "trigifyx_delivered_v1";
-  var RTDB = (ENV.databaseURL || "").replace(/\/$/, "");
-  var BOT_TOKEN = cfg.token || ENV.botToken || "";
   var SENT_SIGS = {};   // in-memory de-dup for the current page load
   var IN_FLIGHT = {};   // queue item ids currently being sent (prevents double flush)
 
@@ -41,31 +45,20 @@
     return data;
   }
 
-  function buildText(data) {
-    var lines = ["New form submission", ""];
-    var keys = Object.keys(data);
-    for (var i = 0; i < keys.length; i++) {
-      lines.push(keys[i] + ": " + data[keys[i]]);
-    }
-    lines.push("");
-    lines.push("Page: " + location.href);
-    lines.push("via TrigifyX");
-    return lines.join("\n");
-  }
-
-  function fetchTelegram(token) {
-    if (!RTDB) return Promise.reject(new Error("no databaseURL"));
-    return fetch(RTDB + "/pub/" + encodeURIComponent(token) + "/telegram.json")
-      .then(function (r) { return r.json(); })
-      .then(function (v) { if (v == null) throw new Error("no destination"); return String(v); });
-  }
-
-  function postToTelegram(telegram, text) {
-    if (!BOT_TOKEN) { console.warn("[TrigifyX] No bot token configured."); return Promise.reject(new Error("no token")); }
-    return fetch("https://api.telegram.org/bot" + BOT_TOKEN + "/sendMessage", {
+  // Send a submission to the backend. The backend resolves the chat id and
+  // delivers to Telegram — the bot token stays server-side.
+  function deliver(item) {
+    return fetch(API_BASE + "/api/submit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: telegram, text: text })
+      body: JSON.stringify({
+        accessToken: item.token,
+        fields: item.body.fields,
+        page: item.body.page
+      })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res;
     });
   }
 
@@ -114,9 +107,7 @@
       return;
     }
     IN_FLIGHT[item.id] = true;
-    fetchTelegram(item.token).then(function (telegram) {
-      return postToTelegram(telegram, item.body.text);
-    }).then(function (res) {
+    deliver(item).then(function (res) {
       if (res.ok) {
         dequeue(item.id);
         markDelivered(item.sig);
@@ -154,7 +145,7 @@
       id: Date.now() + "_" + Math.random().toString(36).slice(2),
       token: cfg.accessToken,
       sig: sig,
-      body: { text: buildText(data), fields: data, page: location.href, ts: Date.now() }
+      body: { fields: data, page: location.href, ts: Date.now() }
     };
     enqueue(item);
     sendOne(item, 0);
