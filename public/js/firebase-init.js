@@ -28,6 +28,7 @@ try { analytics = getAnalytics(app); } catch (e) {}
 window.__fb = { app, auth, db, analytics };
 window.__ENV__ = window.__ENV__ || {};
 window.__ENV__.firebase = firebaseConfig;
+window.__ENV__.databaseURL = firebaseConfig.databaseURL;
 
 // Ensure botToken slot exists (populated by env-injected.js / Netlify snippet).
 window.__ENV__.botToken = window.__ENV__.botToken || "";
