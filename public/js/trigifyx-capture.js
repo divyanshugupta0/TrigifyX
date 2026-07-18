@@ -133,18 +133,19 @@
   }
 
   // Submit handler: enqueue once, send once (no double flush).
-  function submit(form) {
+  function submit(form, e) {
+    // Stop the browser's default form submission (which would navigate/reload
+    // the page). Without this, the reload re-runs flushQueue() and resends the
+    // same submission -> duplicate Telegram messages. The form's own handlers
+    // still run; we only suppress the native navigation.
+    if (e && e.preventDefault) e.preventDefault();
+
     var data = collect(form);
     var sig = JSON.stringify(data) + "|" + location.href;
     // De-dup: skip if already delivered (persisted) or seen this page load.
     if (isDelivered(sig) || SENT_SIGS[sig]) return;
     SENT_SIGS[sig] = true;
     setTimeout(function () { delete SENT_SIGS[sig]; }, 4000);
-
-    // Mark delivered SYNCHRONOUSLY (persisted) before sending, so a native
-    // form submit / page reload cannot cause flushQueue() to resend it
-    // (this prevents the triple-delivery on reload).
-    markDelivered(sig);
 
     var item = {
       id: Date.now() + "_" + Math.random().toString(36).slice(2),
@@ -155,12 +156,11 @@
     enqueue(item);
     sendOne(item, 0);
   }
-
   function attach(form) {
     if (form.__trigifyx) return;
     form.__trigifyx = true;
     form.addEventListener("submit", function () {
-      try { submit(form); } catch (err) { console.warn("[TrigifyX]", err); }
+      try { submit(form, e); } catch (err) { console.warn("[TrigifyX]", err); }
     });
   }
 
@@ -191,3 +191,4 @@
   });
   if (obs) obs.observe(document.documentElement, { childList: true, subtree: true });
 })();
+

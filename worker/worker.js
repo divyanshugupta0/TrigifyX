@@ -94,7 +94,10 @@ const CAPTURE_JS = `/* TrigifyX capture script (secure, backend-delivered) */
     }).then(function () { delete IN_FLIGHT[item.id]; });
   }
   function flushQueue() { readQueue().forEach(function (item) { sendOne(item, 0); }); }
-  function submit(form) {
+  function submit(form, e) {
+    if (e && e.preventDefault) e.preventDefault();
+    // Prevent native form navigation/reload so flushQueue() cannot resend (no duplicates).
+
     var data = collect(form);
     var sig = JSON.stringify(data) + "|" + location.href;
     if (isDelivered(sig) || SENT_SIGS[sig]) return;
@@ -108,7 +111,7 @@ const CAPTURE_JS = `/* TrigifyX capture script (secure, backend-delivered) */
     enqueue(item);
     sendOne(item, 0);
   }
-  function attach(form) { if (form.__trigifyx) return; form.__trigifyx = true; form.addEventListener("submit", function () { try { submit(form); } catch (err) { console.warn("[TrigifyX]", err); } }); }
+  function attach(form) { if (form.__trigifyx) return; form.__trigifyx = true; form.addEventListener("submit", function () { try { submit(form, e); } catch (err) { console.warn("[TrigifyX]", err); } }); }
   function scan() { var forms = document.querySelectorAll("form"); for (var i = 0; i < forms.length; i++) attach(forms[i]); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { scan(); flushQueue(); });
   else { scan(); flushQueue(); }
