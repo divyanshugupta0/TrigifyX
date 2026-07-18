@@ -31,15 +31,26 @@ export default {
       return corsResponse(new Response(null, { status: 204 }), env);
     }
 
-    if (url.pathname === "/health") {
-      return json({ ok: true });
+    if (url.pathname === "/health" || url.pathname === "/") {
+      const configured = !!(env.TELEGRAM_BOT_TOKEN && env.FIREBASE_DB_URL);
+      return json({
+        ok: true,
+        service: "trigifyx-worker",
+        configured,
+        note: "POST your form submissions to /api/submit",
+      });
     }
 
-    if (url.pathname === "/api/submit" && request.method === "POST") {
+    // Accept /api/submit with or without a trailing slash.
+    const path = url.pathname.replace(/\/+$/, "");
+    if (path === "/api/submit" && request.method === "POST") {
       return handleSubmit(request, env);
     }
 
-    return json({ ok: false, error: "not found" }, 404);
+    return json(
+      { ok: false, error: "not found. POST to /api/submit" },
+      404
+    );
   },
 };
 
