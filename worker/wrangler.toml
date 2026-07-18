@@ -1,0 +1,13 @@
+name = "trigifyx-worker"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+
+# Set secrets instead of committing them:
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put FIREBASE_DB_URL
+#   wrangler secret put ALLOWED_ORIGINS   # optional, comma-separated; default "*"
+
+# Example vars (non-secret) — uncomment and adjust if you prefer vars over secrets:
+# [vars]
+# ALLOWED_ORIGINS = "*"
+# FIREBASE_DB_URL = "https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app"
