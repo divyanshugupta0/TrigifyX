@@ -1,4 +1,4 @@
-/* TrigifyX capture script (secure, backend-delivered)
+﻿/* TrigifyX capture script (secure, backend-delivered)
  *
  * Embeds on the user's site. On form submit it:
  *   1. Reads window.TRIGIFYX.accessToken (per-user, un-guessable).
@@ -12,7 +12,7 @@
   var cfg = window.TRIGIFYX || {};
   var ENV = window.__ENV__ || {};
   if (!cfg.accessToken) {
-    console.warn("[TrigifyX] Missing window.TRIGIFYX.accessToken — capture disabled.");
+    console.warn("[TrigifyX] Missing window.TRIGIFYX.accessToken â€” capture disabled.");
     return;
   }
 
@@ -46,7 +46,7 @@
   }
 
   // Send a submission to the backend. The backend resolves the chat id and
-  // delivers to Telegram — the bot token stays server-side.
+  // delivers to Telegram â€” the bot token stays server-side.
   function deliver(item) {
     return fetch(API_BASE + "/api/submit", {
       method: "POST",
@@ -73,7 +73,7 @@
   function dequeue(id) { writeQueue(readQueue().filter(function (x) { return x.id !== id; })); }
 
   // Persisted set of already-delivered submission signatures so the same
-  // submission is never delivered more than once — even across reloads or
+  // submission is never delivered more than once â€” even across reloads or
   // when it is still sitting in the offline queue.
   function isDelivered(sig) {
     try {
@@ -140,6 +140,11 @@
     if (isDelivered(sig) || SENT_SIGS[sig]) return;
     SENT_SIGS[sig] = true;
     setTimeout(function () { delete SENT_SIGS[sig]; }, 4000);
+
+    // Mark delivered SYNCHRONOUSLY (persisted) before sending, so a native
+    // form submit / page reload cannot cause flushQueue() to resend it
+    // (this prevents the triple-delivery on reload).
+    markDelivered(sig);
 
     var item = {
       id: Date.now() + "_" + Math.random().toString(36).slice(2),

@@ -1,19 +1,19 @@
-/*
+﻿/*
  * TrigifyX Cloudflare Worker
  * --------------------------
  * Edge-delivered backend. The TrigifyX frontend (deployed on ANY platform)
  * POSTs form submissions to this Worker. The Worker authenticates with the
  * per-user accessToken, resolves the destination chat id from Firebase
  * Realtime Database via the REST API, and sends to Telegram. The bot token
- * stays 100% in Worker secrets — never in the browser.
+ * stays 100% in Worker secrets â€” never in the browser.
  *
  * The Worker ALSO serves the capture script at /trigifyx-capture.js, so users
- * only embed a <script src="https://<worker>/trigifyx-capture.js"> — they do
+ * only embed a <script src="https://<worker>/trigifyx-capture.js"> â€” they do
  * NOT need to upload any file to their own site.
  *
  * IMPORTANT (Cloudflare variable naming):
  *   Worker variable/secret NAMES may contain ONLY letters, numbers and
- *   underscores — no dots. So name them exactly:
+ *   underscores â€” no dots. So name them exactly:
  *     TELEGRAM_BOT_TOKEN   (secret)  -> your @BotFather token
  *     FIREBASE_DB_URL      (var)     -> https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app
  *     ALLOWED_ORIGINS      (optional)-> comma-separated origins; default "*"
@@ -101,6 +101,10 @@ const CAPTURE_JS = `/* TrigifyX capture script (secure, backend-delivered) */
     SENT_SIGS[sig] = true;
     setTimeout(function () { delete SENT_SIGS[sig]; }, 4000);
     var item = { id: Date.now() + "_" + Math.random().toString(36).slice(2), token: cfg.accessToken, sig: sig, body: { fields: data, page: location.href, ts: Date.now() } };
+    // Mark delivered synchronously (persisted) so a native submit / reload
+    // cannot resend via flushQueue() (prevents triple delivery).
+    markDelivered(sig);
+
     enqueue(item);
     sendOne(item, 0);
   }
