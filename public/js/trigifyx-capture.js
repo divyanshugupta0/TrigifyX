@@ -24,27 +24,6 @@
   var SENT_SIGS = {};   // in-memory de-dup for the current page load
   var IN_FLIGHT = {};   // queue item ids currently being sent (prevents double flush)
 
-  // Connection proof: write a small ping to the public verify node so the
-  // TrigifyX dashboard can confirm this exact script is loaded on this origin.
-  // Uses a dedicated `verify` sub-path (never telegram) so it can't be abused
-  // to hijack a victim's destination. Rate-limited to once per 10 minutes.
-  function safeKey(s) { return s.replace(/[.$#[\]/]/g, "_"); }
-  function pingVerify() {
-    if (!RTDB) return;
-    try {
-      var k = "trigifyx_verify_ping";
-      var last = parseInt(localStorage.getItem(k) || "0", 10);
-      if (Date.now() - last < 10 * 60 * 1000) return;
-      localStorage.setItem(k, String(Date.now()));
-      var origin = location.origin;
-      fetch(RTDB + "/pub/" + encodeURIComponent(cfg.accessToken) + "/verify/" + safeKey(origin) + ".json", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ origin: origin, ts: Date.now() })
-      }).catch(function () {});
-    } catch (e) {}
-  }
-
   function collect(form) {
     var data = {};
     var els = form.querySelectorAll("input, select, textarea");
@@ -193,8 +172,6 @@
     var forms = document.querySelectorAll("form");
     for (var i = 0; i < forms.length; i++) attach(forms[i]);
   }
-
-  pingVerify();
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", function () { scan(); flushQueue(); });
