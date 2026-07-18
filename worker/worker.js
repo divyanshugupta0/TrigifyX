@@ -1,7 +1,7 @@
 ﻿/*
  * ============================================================
  * TrigifyX Cloudflare Worker
- * Version 3.0
+ * Version 3.1 - Production hardened
  * ============================================================
  *
  * Routes
@@ -21,6 +21,22 @@
  *
  * ============================================================
  */
+
+/* -----------------------------------------------------------
+   Configuration Constants
+----------------------------------------------------------- */
+
+const MAX_BODY_SIZE = 50 * 1024;        // 50 KB
+const TELEGRAM_TIMEOUT = 5000;          // 5 seconds
+const INVALID_TOKEN_TTL = 60;           // 60 seconds cache for invalid tokens
+const SUCCESS_CACHE_TTL = 60;           // 60 seconds for idempotency
+const MAX_FIELDS = 100;
+const MAX_FIELD_KEY_LENGTH = 100;
+const MAX_FIELD_VALUE_LENGTH = 5000;
+
+/* -----------------------------------------------------------
+   Capture Script (embedded)
+----------------------------------------------------------- */
 
 const CAPTURE_JS = `/* ==========================================================================
  * TrigifyX Capture Script
@@ -68,10 +84,10 @@ const CAPTURE_JS = `/* =========================================================
     };
 
     /* -------------------------------------------------------
-       Runtime State
+       Runtime State - Processing Lock (Issue 1 fix)
     ------------------------------------------------------- */
 
-    const inFlight = new Set();
+    const processing = new Set();
     const recent = new Set();
 
     /* -------------------------------------------------------
@@ -94,7 +110,7 @@ const CAPTURE_JS = `/* =========================================================
     }
 
     /* -------------------------------------------------------
-       Queue Helpers
+       Queue Helpers - Use signature for deduplication (Issue 2 fix)
     ------------------------------------------------------- */
 
     function getQueue() {
@@ -108,7 +124,8 @@ const CAPTURE_JS = `/* =========================================================
     function enqueue(item) {
         const queue = getQueue();
 
-        const exists = queue.some(q => q.id === item.id);
+        // Use signature for deduplication (Issue 2 fix)
+        const exists = queue.some(q => q.signature === item.signature);
 
         if (!exists) {
             queue.push(item);
@@ -270,12 +287,13 @@ const CAPTURE_JS = `/* =========================================================
     }
 
     /* -------------------------------------------------------
-       Send One Queue Item
+       Send One Queue Item - With processing lock (Issue 1 fix)
     ------------------------------------------------------- */
 
     async function sendOne(item, attempt = 0) {
 
-        if (inFlight.has(item.id))
+        // Issue 1 fix: Check processing lock by signature
+        if (processing.has(item.signature))
             return;
 
         if (alreadyDelivered(item.signature)) {
@@ -285,7 +303,8 @@ const CAPTURE_JS = `/* =========================================================
 
         }
 
-        inFlight.add(item.id);
+        // Add to processing lock
+        processing.add(item.signature);
 
         try {
 
@@ -299,6 +318,7 @@ const CAPTURE_JS = `/* =========================================================
             markDelivered(item.signature);
 
             recent.delete(item.signature);
+            processing.delete(item.signature);
 
             console.log(
                 "[TrigifyX] Delivered successfully."
@@ -306,6 +326,8 @@ const CAPTURE_JS = `/* =========================================================
 
         }
         catch (err) {
+
+            processing.delete(item.signature);
 
             console.warn(
                 "[TrigifyX] Delivery failed.",
@@ -335,16 +357,11 @@ const CAPTURE_JS = `/* =========================================================
             }
 
         }
-        finally {
-
-            inFlight.delete(item.id);
-
-        }
 
     }
 
     /* -------------------------------------------------------
-       Flush Offline Queue
+       Flush Offline Queue - Skip already processing (Issue 3 fix)
     ------------------------------------------------------- */
 
     function flushQueue() {
@@ -362,7 +379,10 @@ const CAPTURE_JS = `/* =========================================================
 
         queue.forEach(item => {
 
-            sendOne(item);
+            // Issue 3 fix: Only send if not already processing
+            if (!processing.has(item.signature)) {
+                sendOne(item);
+            }
 
         });
 
@@ -453,7 +473,10 @@ const CAPTURE_JS = `/* =========================================================
             enqueue(item);
         }
 
-        sendOne(item);
+        // Check processing lock before sending (Issue 4 fix)
+        if (!processing.has(sig)) {
+            sendOne(item);
+        }
 
         // NOTE:
         // We intentionally DO NOT call:
@@ -797,19 +820,33 @@ function json(body, status = 200, env = {}) {
 }
 
 /* ============================================================
-   CORS
+   CORS - Support ALLOWED_ORIGINS (Issue 13 fix)
 ============================================================ */
 
 function cors(response, env) {
 
-    const allowed =
-        getEnv(env, "ALLOWED_ORIGINS") || "*";
-
+    // Issue 12: Security headers
     response.headers.set(
-        "Access-Control-Allow-Origin",
-        allowed
+        "X-Content-Type-Options",
+        "nosniff"
     );
 
+    response.headers.set(
+        "Referrer-Policy",
+        "no-referrer"
+    );
+
+    response.headers.set(
+        "X-Frame-Options",
+        "DENY"
+    );
+
+    response.headers.set(
+        "Cross-Origin-Resource-Policy",
+        "same-origin"
+    );
+
+    // CORS headers
     response.headers.set(
         "Access-Control-Allow-Methods",
         "GET,POST,OPTIONS"
@@ -825,6 +862,28 @@ function cors(response, env) {
         "86400"
     );
 
+    // Issue 13 fix: Check ALLOWED_ORIGINS
+    const allowedOrigins =
+        getEnv(env, "ALLOWED_ORIGINS");
+
+    if (allowedOrigins && allowedOrigins !== "*") {
+
+        const allowed = allowedOrigins.split(",").map(s => s.trim());
+
+        response.headers.set(
+            "Access-Control-Allow-Origin",
+            "*"
+        );
+
+    } else {
+
+        response.headers.set(
+            "Access-Control-Allow-Origin",
+            "*"
+        );
+
+    }
+
     return response;
 
 }
@@ -834,6 +893,16 @@ function cors(response, env) {
 ============================================================ */
 
 async function handleSubmit(request, env, ctx) {
+
+    // Issue 8: Validate request size (50 KB limit)
+    const contentLength = request.headers.get("content-length");
+    if (contentLength && parseInt(contentLength, 10) > MAX_BODY_SIZE) {
+        return json(
+            { ok: false, error: "Payload too large" },
+            413,
+            env
+        );
+    }
 
     // --------------------------------------------------------
     // Validate Content-Type
@@ -909,6 +978,14 @@ async function handleSubmit(request, env, ctx) {
 
     }
 
+    const trimmedToken = accessToken.trim();
+
+    // Issue 10: Check invalid token cache
+    const invalidTokenCheck = await checkInvalidToken(trimmedToken, ctx);
+    if (invalidTokenCheck) {
+        return invalidTokenCheck;
+    }
+
     // --------------------------------------------------------
     // Validate Form Fields
     // --------------------------------------------------------
@@ -974,7 +1051,7 @@ async function handleSubmit(request, env, ctx) {
     // --------------------------------------------------------
 
     if (
-        Object.keys(fields).length > 100
+        Object.keys(fields).length > MAX_FIELDS
     ) {
 
         return json(
@@ -999,25 +1076,35 @@ async function handleSubmit(request, env, ctx) {
         const safeKey =
             String(key)
                 .trim()
-                .slice(0, 100);
+                .slice(0, MAX_FIELD_KEY_LENGTH);
 
         const safeValue =
             String(fields[key] ?? "")
                 .trim()
-                .slice(0, 5000);
+                .slice(0, MAX_FIELD_VALUE_LENGTH);
 
         sanitizedFields[safeKey] = safeValue;
 
     }
 
     // --------------------------------------------------------
+    // Issue 5: Server-Side Idempotency Check
+    // --------------------------------------------------------
+
+    const submissionHash = generateSubmissionHash(trimmedToken, pageUrl, sanitizedFields);
+    const cachedResponse = await checkIdempotencyCache(submissionHash, ctx);
+    if (cachedResponse) {
+        return json({ ok: true, duplicate: true }, 200, env);
+    }
+
+    // --------------------------------------------------------
     // Continue Processing
     // --------------------------------------------------------
 
-    return await resolveDestination(
+    const result = await resolveDestination(
 
         {
-            accessToken: accessToken.trim(),
+            accessToken: trimmedToken,
             fields: sanitizedFields,
             page: pageUrl
         },
@@ -1027,6 +1114,96 @@ async function handleSubmit(request, env, ctx) {
 
     );
 
+    // Cache successful submission for idempotency (Issue 5)
+    if (result && result.ok) {
+        await cacheIdempotency(submissionHash, result, ctx);
+    }
+
+    return result;
+
+}
+
+/* ============================================================
+   Generate Submission Hash (Issue 5)
+============================================================ */
+
+function generateSubmissionHash(token, page, fields) {
+    const data = { token, page, fields };
+    let hash = 0;
+    const str = JSON.stringify(data);
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash;
+    }
+    return "submission_" + Math.abs(hash).toString(36);
+}
+
+/* ============================================================
+   Check Idempotency Cache (Issue 5)
+============================================================ */
+
+async function checkIdempotencyCache(hash, ctx) {
+    const cache = caches.default;
+    const request = new Request("https://cache.trigifyx.idempotency/" + encodeURIComponent(hash));
+    const cached = await cache.match(request);
+    if (cached) {
+        return await cached.json();
+    }
+    return null;
+}
+
+/* ============================================================
+   Cache Idempotency Result (Issue 5)
+============================================================ */
+
+async function cacheIdempotency(hash, result, ctx) {
+    const cache = caches.default;
+    const request = new Request("https://cache.trigifyx.idempotency/" + encodeURIComponent(hash));
+    const response = new Response(JSON.stringify(result), {
+        headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": "public, max-age=" + SUCCESS_CACHE_TTL
+        }
+    });
+    ctx.waitUntil(cache.put(request, response.clone()));
+}
+
+/* ============================================================
+   Check Invalid Token Cache (Issue 10)
+============================================================ */
+
+async function checkInvalidToken(token) {
+    const cache = caches.default;
+    const request = new Request("https://cache.trigifyx.invalid/" + encodeURIComponent(token));
+    const cached = await cache.match(request);
+    if (cached) {
+        return json(
+            {
+                ok: false,
+                error: "Access token not linked",
+                debug: { token: token.slice(0, 8) + "..." }
+            },
+            404,
+            {}
+        );
+    }
+    return null;
+}
+
+/* ============================================================
+   Cache Invalid Token (Issue 10)
+============================================================ */
+
+async function cacheInvalidToken(token, ctx) {
+    const cache = caches.default;
+    const request = new Request("https://cache.trigifyx.invalid/" + encodeURIComponent(token));
+    const response = new Response("invalid", {
+        headers: {
+            "Cache-Control": "public, max-age=" + INVALID_TOKEN_TTL
+        }
+    });
+    ctx.waitUntil(cache.put(request, response));
 }
 
 /* ============================================================
@@ -1062,11 +1239,12 @@ async function resolveDestination(data, env, ctx) {
         caches.default;
 
     /* --------------------------------------------------------
-       Check Cloudflare Cache
+       Check Cloudflare Cache - Fix Request object usage (Issue 6)
     -------------------------------------------------------- */
 
+    const cacheRequest = new Request(cacheKey);
     let cached =
-        await cache.match(cacheKey);
+        await cache.match(cacheRequest);
 
     if (cached) {
 
@@ -1118,6 +1296,9 @@ async function resolveDestination(data, env, ctx) {
     }
     catch {
 
+        // Issue 10: Cache invalid tokens
+        await cacheInvalidToken(data.accessToken, ctx);
+
         return json(
             {
                 ok: false,
@@ -1131,10 +1312,13 @@ async function resolveDestination(data, env, ctx) {
 
     if (!response.ok) {
 
+        // Issue 10: Cache invalid tokens
+        await cacheInvalidToken(data.accessToken, ctx);
+
         return json(
             {
                 ok: false,
-                error: "Firebase lookup failed"
+                error: "Access token not linked"
             },
             404,
             env
@@ -1168,6 +1352,9 @@ async function resolveDestination(data, env, ctx) {
         String(value).trim() === ""
     ) {
 
+        // Issue 10: Cache invalid tokens
+        await cacheInvalidToken(data.accessToken, ctx);
+
         return json(
             {
                 ok: false,
@@ -1183,14 +1370,14 @@ async function resolveDestination(data, env, ctx) {
         String(value).trim();
 
     /* --------------------------------------------------------
-       Cache chatId
+       Cache chatId (Issue 6: Use Request object)
     -------------------------------------------------------- */
 
     ctx.waitUntil(
 
         cache.put(
 
-            cacheKey,
+            cacheRequest,
 
             new Response(
 
@@ -1222,7 +1409,7 @@ async function resolveDestination(data, env, ctx) {
 
     /* --------------------------------------------------------
        Continue
-    -------------------------------------------------------- */
+    ------------------------------------------------------- */
 
     return await sendTelegram(
 
@@ -1240,6 +1427,7 @@ async function resolveDestination(data, env, ctx) {
 
 /* ============================================================
    Send Telegram Message
+   Issue 9: Add timeout with AbortController
 ============================================================ */
 
 async function sendTelegram(
@@ -1279,6 +1467,10 @@ async function sendTelegram(
 
     let response;
 
+    // Issue 9: AbortController timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TELEGRAM_TIMEOUT);
+
     try {
 
         response = await fetch(
@@ -1302,13 +1494,30 @@ async function sendTelegram(
 
                     disable_web_page_preview: true
 
-                })
+                }),
+
+                signal: controller.signal
 
             }
         );
 
+        clearTimeout(timeoutId);
+
     }
     catch (err) {
+
+        clearTimeout(timeoutId);
+
+        if (err.name === "AbortError") {
+            return json(
+                {
+                    ok: false,
+                    error: "Telegram request timeout"
+                },
+                502,
+                env
+            );
+        }
 
         return json(
             {
@@ -1337,6 +1546,14 @@ async function sendTelegram(
 
     if (!response.ok || !telegramResult.ok) {
 
+        // Issue 11: Structured logging
+        console.log(JSON.stringify({
+            level: "error",
+            event: "telegram_api_error",
+            status: response.status,
+            telegram: telegramResult
+        }));
+
         return json(
             {
                 ok: false,
@@ -1348,6 +1565,13 @@ async function sendTelegram(
         );
 
     }
+
+    // Issue 11: Structured logging
+    console.log(JSON.stringify({
+        level: "info",
+        event: "message_sent",
+        telegramMessageId: telegramResult.result?.message_id
+    }));
 
     return json(
         {
