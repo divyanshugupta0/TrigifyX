@@ -8,7 +8,7 @@ window.__ENV__ = window.__ENV__ || {};
 // Backend base URL that delivers submissions to Telegram (the bot token
 // lives there, never in the browser). This is the Cloudflare Worker URL.
 // The frontend can be hosted on any platform — it just needs to reach this endpoint.
-window.__ENV__.apiBase = "https://trigify.divyanshugupta415.workers.dev"; // no trailing slash
+window.__ENV__.apiBase = "https://trigifyx-worker.divyanshugupta415.workers.dev"; // no trailing slash
 
 // Optional: override where the capture script is hosted (defaults to the
 // user's own site, relative path).

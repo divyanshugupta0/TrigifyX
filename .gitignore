@@ -13,6 +13,7 @@ server/firebase-service-account.json
 # Non-frontend (deployed separately): Python bot for cloud.tranger.xyz
 bot/
 
-# Real site config with secrets — keep example only
-public/js/config.js
+# Cloudflare Wrangler build artifacts
+.wrangler/
+worker/.wrangler/
 

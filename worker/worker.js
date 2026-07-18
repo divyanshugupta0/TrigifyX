@@ -139,7 +139,7 @@ export default {
         service: "trigifyx-worker",
         configured,
         note: "POST form submissions to /api/submit",
-      });
+      }, 200, env);
     }
 
     if (url.pathname === "/trigifyx-capture.js") {
@@ -158,7 +158,8 @@ export default {
 
     return json(
       { ok: false, error: "not found. POST to /api/submit" },
-      404
+      404,
+      env
     );
   },
 };
@@ -175,44 +176,60 @@ async function handleSubmit(request, env) {
   const dbUrlBase = getEnv(env, "FIREBASE_DB_URL", "DB_URL");
 
   if (!botToken) {
-    return json({ ok: false, error: "server misconfigured (bot token)" }, 500);
+    return json({ ok: false, error: "server misconfigured (bot token)" }, 500, env);
   }
   if (!dbUrlBase) {
-    return json({ ok: false, error: "server misconfigured (db url)" }, 500);
+    return json({ ok: false, error: "server misconfigured (db url)" }, 500, env);
   }
 
   let payload;
   try {
     payload = await request.json();
   } catch (e) {
-    return json({ ok: false, error: "invalid json" }, 400);
+    return json({ ok: false, error: "invalid json" }, 400, env);
   }
 
   const { accessToken, fields, page } = payload || {};
   if (!accessToken || typeof accessToken !== "string") {
-    return json({ ok: false, error: "missing accessToken" }, 400);
+    return json({ ok: false, error: "missing accessToken" }, 400, env);
   }
   if (!fields || typeof fields !== "object") {
-    return json({ ok: false, error: "missing fields" }, 400);
+    return json({ ok: false, error: "missing fields" }, 400, env);
   }
 
   const dbUrl = dbUrlBase.replace(/\/$/, "");
   let chatId = null;
+  let fbStatus = null;
+  let fbBody = null;
   try {
     const r = await fetch(
       dbUrl + "/pub/" + encodeURIComponent(accessToken) + "/telegram.json"
     );
+    fbStatus = r.status;
+    fbBody = (await r.text()) || "";
     if (r.ok) {
-      const v = await r.json();
-      if (v) chatId = String(v);
+      let v = null;
+      try { v = JSON.parse(fbBody); } catch (_) { v = null; }
+      if (v) chatId = String(v).trim();
     }
   } catch (e) {
-    chatId = null;
+    fbStatus = "fetch-error";
+    fbBody = e.message;
   }
   if (!chatId) {
     return json(
-      { ok: false, error: "no destination linked for this token" },
-      404
+      {
+        ok: false,
+        error: "no destination linked for this token",
+        debug: {
+          accessToken: accessToken.slice(0, 8) + "...",
+          dbUrl: dbUrl,
+          firebaseStatus: fbStatus,
+          firebaseBody: fbBody.slice(0, 120),
+        },
+      },
+      404,
+      env
     );
   }
 
@@ -233,11 +250,11 @@ async function handleSubmit(request, env) {
     );
     if (!res.ok) {
       const body = await res.text();
-      return json({ ok: false, error: "telegram failed: " + res.status }, 502);
+      return json({ ok: false, error: "telegram failed: " + res.status + " " + (body || "").slice(0, 200) }, 502, env);
     }
-    return corsResponse(json({ ok: true }), env);
+    return json({ ok: true }, env);
   } catch (e) {
-    return json({ ok: false, error: "delivery failed" }, 500);
+    return json({ ok: false, error: "delivery failed: " + e.message }, 500, env);
   }
 }
 
@@ -262,13 +279,13 @@ function esc(s) {
     .replace(/>/g, "&gt;");
 }
 
-function json(obj, status = 200) {
+function json(obj, status = 200, env = {}) {
   return corsResponse(
     new Response(JSON.stringify(obj), {
       status,
       headers: { "Content-Type": "application/json" },
     }),
-    {}
+    env
   );
 }
 
