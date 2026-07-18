@@ -18,7 +18,8 @@ import {
 import {
   ref,
   set,
-  get
+  get,
+  update
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const ENV = window.__ENV__ || {};
@@ -55,6 +56,20 @@ function apiKey() {
   const r = () => Math.random().toString(36).slice(2);
   return "tgx_" + r() + r() + r();
 }
+// Un-guessable per-user access token embedded in the public snippet.
+// Lets the capture script fetch the user's telegram from Firebase without
+// exposing it in the page source.
+function accessToken() {
+  const c = globalThis.crypto || globalThis.msCrypto;
+  if (c && c.getRandomValues) {
+    const a = new Uint8Array(36);
+    c.getRandomValues(a);
+    return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  let s = "";
+  for (let i = 0; i < 72; i++) s += Math.floor(Math.random() * 16).toString(16);
+  return s;
+}
 function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
@@ -70,12 +85,13 @@ function copy(text) {
 async function signUp(email, password, name, telegram) {
   const auth = (window.__fb || {}).auth;
   const db = (window.__fb || {}).db;
+  const token = accessToken();
   const profile = {
     uid: "", email, name: name || "", telegram: telegram || "",
-    apiKey: apiKey(), createdAt: Date.now(), plan: "free"
+    apiKey: apiKey(), accessToken: token, createdAt: Date.now(), plan: "free"
   };
   if (demoMode()) {
-    const u = { uid: uid(), email, name: profile.name, telegram: profile.telegram };
+    const u = { uid: uid(), email, name: profile.name, telegram: profile.telegram, accessToken: token };
     Demo.saveUser(u, profile);
     profile.uid = u.uid;
     return u;
@@ -86,6 +102,8 @@ async function signUp(email, password, name, telegram) {
     try { await updateProfile(cred.user, { displayName: name }); } catch (e) {}
   }
   await set(ref(db, "users/" + cred.user.uid), profile);
+  // Public lookup node: token -> telegram (chat id never in the snippet).
+  await set(ref(db, "pub/" + token), { telegram: telegram || "", uid: cred.user.uid });
   return cred.user;
 }
 
@@ -159,20 +177,16 @@ function renderSnippet(p) {
   const SCRIPT_BASE = ENV.scriptBase || "https://trigifyx.netlify.app";
   const scriptSrc = SCRIPT_BASE.replace(/\/$/, "") + "/js/trigifyx-capture.js";
 
-  // Pure-frontend delivery: the bot token is injected at deploy time
-  // (Netlify env var -> window.__ENV__.botToken via env-injected.js), so the
-  // snippet posts submissions straight from the browser to Telegram. No backend.
-  const deliveryLine = ENV.botToken
-    ? '  token: "' + ENV.botToken + '",'
-    : "";
-
+  // SECURITY: the public snippet contains ONLY the per-user access token.
+  // The Telegram destination (chat id / @username) and the bot token are
+  // resolved at runtime from Firebase — never embedded in the page source.
+  // This keeps the user's apiKey and Telegram chat id out of their HTML.
+  const token = p.accessToken || "";
   const snippet =
 `<!-- TrigifyX: paste before </body> on every page with a form -->
 <script>
   window.TRIGIFYX = {
-    apiKey: "${p.apiKey}",${deliveryLine}
-    bot: "${BOT_USERNAME}",
-    telegram: "${p.telegram || "<YOUR_TELEGRAM_CHAT>"}"
+    accessToken: "${token}"
   };
 </script>
 <script src="${scriptSrc}" defer></script>`;
@@ -247,6 +261,10 @@ function bindUI() {
     const p = await getProfile(currentUser);
     p.telegram = val;
     await saveProfile(currentUser, p);
+    if (p.accessToken) {
+      const db = (window.__fb || {}).db;
+      await set(ref(db, "pub/" + p.accessToken), { telegram: val, uid: p.uid });
+    }
     renderProfile(p);
     toast("Telegram account linked");
   };
@@ -286,6 +304,16 @@ async function onLogin(u) {
   if (!p) {
     p = { uid: u.uid, email: u.email, apiKey: apiKey(), telegram: "", createdAt: Date.now(), plan: "free" };
     await saveProfile(u, p);
+  }
+  // Backfill access token for users created before tokens existed.
+  if (!p.accessToken) {
+    p.accessToken = accessToken();
+    await saveProfile(u, p);
+  }
+  // Ensure the public lookup node exists (for the capture script).
+  const db = (window.__fb || {}).db;
+  if (db) {
+    await set(ref(db, "pub/" + p.accessToken), { telegram: p.telegram || "", uid: p.uid });
   }
   // If a Google/SSO user is missing required details, force profile completion.
   const missing = !p.name || !p.telegram;

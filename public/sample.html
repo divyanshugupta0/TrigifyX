@@ -41,14 +41,12 @@
   </main>
 
   <!-- TrigifyX: paste before </body> on every page with a form -->
-  <!-- Pure frontend: capture script served from Netlify, delivers straight to
-       Telegram. The token is injected from deploy env (env-injected.js). -->
+  <!-- The live snippet contains ONLY your access token (copied from the
+       TrigifyX dashboard). The Telegram destination and bot token are
+       resolved at runtime from Firebase, so nothing secret lives in your HTML. -->
   <script>
     window.TRIGIFYX = {
-      apiKey: "tgx_e5ifsi1j7y52si3n1r1gouq0ji9df2n0f",
-      bot: "TrigifyXbot",
-      telegram: "8120033040",
-      token: "8830847594:AAFNbQLG41MEnnzwawAfhshs8JzknWzsQLU"
+      accessToken: "REPLACE_WITH_YOUR_ACCESS_TOKEN"
     };
   </script>
   <script src="js/trigifyx-capture.js" defer></script>
