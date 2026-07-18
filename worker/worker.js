@@ -1,457 +1,1436 @@
 ﻿/*
+ * ============================================================
  * TrigifyX Cloudflare Worker
- * --------------------------
- * Edge-delivered backend. The TrigifyX frontend (deployed on ANY platform)
- * POSTs form submissions to this Worker. The Worker authenticates with the
- * per-user accessToken, resolves the destination chat id from Firebase
- * Realtime Database via the REST API, and sends to Telegram. The bot token
- * stays 100% in Worker secrets â€” never in the browser.
+ * Version 3.0
+ * ============================================================
  *
- * The Worker ALSO serves the capture script at /trigifyx-capture.js, so users
- * only embed a <script src="https://<worker>/trigifyx-capture.js"> â€” they do
- * NOT need to upload any file to their own site.
+ * Routes
+ *   GET  /
+ *   GET  /health
+ *   GET  /trigifyx-capture.js
+ *   POST /api/submit
  *
- * IMPORTANT (Cloudflare variable naming):
- *   Worker variable/secret NAMES may contain ONLY letters, numbers and
- *   underscores â€” no dots. So name them exactly:
- *     TELEGRAM_BOT_TOKEN   (secret)  -> your @BotFather token
- *     FIREBASE_DB_URL      (var)     -> https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app
- *     ALLOWED_ORIGINS      (optional)-> comma-separated origins; default "*"
- *   Do NOT name a variable "window.ENV.apiBase" or anything with a dot.
+ * Required Secrets
+ *   TELEGRAM_BOT_TOKEN
  *
- * Endpoints:
- *   GET  /                        -> status page (shows whether secrets are configured)
- *   GET  /health                  -> { ok: true }
- *   GET  /trigifyx-capture.js     -> the embeddable capture script
- *   POST /api/submit              -> body { accessToken, fields, page }
+ * Required Variables
+ *   FIREBASE_DB_URL
+ *
+ * Optional Variables
+ *   ALLOWED_ORIGINS
+ *
+ * ============================================================
  */
 
-const CAPTURE_JS = `/* TrigifyX v2 — Form-to-Telegram capture script */
+const CAPTURE_JS = `/* ==========================================================================
+ * TrigifyX Capture Script
+ * Version: 3.0
+ * Author: TrigifyX
+ *
+ * Secure frontend capture library.
+ * - No Telegram Bot Token in browser
+ * - Offline Queue
+ * - Automatic Retry
+ * - Duplicate Prevention
+ * - Dynamic Form Detection
+ * ========================================================================== */
+
 (function () {
-  'use strict';
+    "use strict";
 
-  var cfg = window.TRIGIFYX || {};
-  var ENV = window.__ENV__ || {};
+    /* -------------------------------------------------------
+       Configuration
+    ------------------------------------------------------- */
 
-  // --- Config ---
-  var TOKEN = cfg.accessToken || '';
-  var API_BASE = (cfg.endpoint || ENV.apiBase || '').replace(/\\/$/, '');
+    const cfg = window.TRIGIFYX || {};
+    const ENV = window.__ENV__ || {};
 
-  if (!TOKEN) {
-    console.warn('[TrigifyX] Missing accessToken. No forms will be captured.');
-    return;
-  }
-  if (!API_BASE) {
-    console.warn('[TrigifyX] No endpoint. Set window.TRIGIFYX.endpoint or window.__ENV__.apiBase.');
-    return;
-  }
+    const ACCESS_TOKEN = cfg.accessToken || "";
+    const API_BASE = (cfg.endpoint || ENV.apiBase || "").replace(/\\/$/, "");
 
-  console.log('[TrigifyX] Initialized — endpoint:', API_BASE);
-
-  // --- Storage keys ---
-  var QUEUE_KEY = 'trigifyx_queue';
-  var SENT_KEY = 'trigifyx_sent';
-
-  // --- In-memory dedup (cleared every 5s) ---
-  var recentSigs = {};
-
-  // --- Helpers ---
-  function readStore(key) {
-    try { return JSON.parse(localStorage.getItem(key) || '[]'); }
-    catch (e) { return []; }
-  }
-  function writeStore(key, items) {
-    try { localStorage.setItem(key, JSON.stringify(items)); } catch (e) {}
-  }
-  function isSent(sig) {
-    try {
-      var sent = JSON.parse(localStorage.getItem(SENT_KEY) || '{}');
-      return !!sent[sig];
-    } catch (e) { return false; }
-  }
-  function markSent(sig) {
-    try {
-      var sent = JSON.parse(localStorage.getItem(SENT_KEY) || '{}');
-      sent[sig] = Date.now();
-      // Keep only last 200 entries
-      var keys = Object.keys(sent);
-      if (keys.length > 200) {
-        keys.sort(function (a, b) { return sent[a] - sent[b]; });
-        for (var i = 0; i < keys.length - 200; i++) delete sent[keys[i]];
-      }
-      localStorage.setItem(SENT_KEY, JSON.stringify(sent));
-    } catch (e) {}
-  }
-
-  // --- Collect form data ---
-  function collect(form) {
-    var data = {};
-    var els = form.elements;
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      if (!el.name && !el.id) continue;
-      if (el.type === 'submit' || el.type === 'button') continue;
-      if (el.type === 'password') continue;
-      var name = el.name || el.id;
-      if (el.type === 'checkbox') {
-        if (el.checked) data[name] = data[name] ? data[name] + ', ' + el.value : el.value;
-      } else if (el.type === 'radio') {
-        if (el.checked) data[name] = el.value;
-      } else if (el.value) {
-        data[name] = el.value;
-      }
-    }
-    return data;
-  }
-
-  // --- Send to worker ---
-  function sendToWorker(fields, page, token) {
-    return fetch(API_BASE + '/api/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        accessToken: token,
-        fields: fields,
-        page: page
-      })
-    }).then(function (res) {
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      return res.json();
-    });
-  }
-
-  // --- Queue management ---
-  function addToQueue(item) {
-    var q = readStore(QUEUE_KEY);
-    q.push(item);
-    writeStore(QUEUE_KEY, q);
-  }
-  function removeFromQueue(id) {
-    writeStore(QUEUE_KEY, readStore(QUEUE_KEY).filter(function (x) { return x.id !== id; }));
-  }
-
-  // --- Retry with exponential backoff ---
-  function retry(item, attempt) {
-    attempt = attempt || 0;
-    if (attempt > 5) {
-      console.warn('[TrigifyX] Failed after ' + attempt + ' retries:', item);
-      return;
-    }
-    var delay = Math.min(1000 * Math.pow(2, attempt), 30000);
-    setTimeout(function () {
-      processItem(item, attempt);
-    }, delay);
-  }
-
-  function processItem(item, attempt) {
-    attempt = attempt || 0;
-    // Already sent? Remove from queue.
-    if (isSent(item.sig)) {
-      removeFromQueue(item.id);
-      return;
-    }
-    sendToWorker(item.fields, item.page, item.token).then(function (res) {
-      if (res && res.ok) {
-        removeFromQueue(item.id);
-        markSent(item.sig);
-        delete recentSigs[item.sig];
-        console.log('[TrigifyX] Sent successfully');
-      } else {
-        throw new Error('Unexpected response');
-      }
-    }).catch(function (err) {
-      console.warn('[TrigifyX] Send error:', err.message);
-      retry(item, attempt + 1);
-    });
-  }
-
-  // --- Flush queued items on load ---
-  function flushQueue() {
-    var q = readStore(QUEUE_KEY);
-    console.log('[TrigifyX] Flushing ' + q.length + ' queued items');
-    q.forEach(function (item) { processItem(item, 0); });
-  }
-
-  // --- Core submit handler ---
-  function handleSubmit(form, event) {
-    // ALWAYS prevent native submission
-    if (event) {
-      event.preventDefault();
-      event.stopPropagation();
+    if (!ACCESS_TOKEN) {
+        console.warn("[TrigifyX] Missing accessToken.");
+        return;
     }
 
-    var fields = collect(form);
-    var keys = Object.keys(fields);
-    if (keys.length === 0) {
-      console.warn('[TrigifyX] No fields collected from form');
-      return;
+    if (!API_BASE) {
+        console.warn("[TrigifyX] Missing endpoint.");
+        return;
     }
 
-    var sig = JSON.stringify(fields) + '|' + location.href;
+    /* -------------------------------------------------------
+       Storage Keys
+    ------------------------------------------------------- */
 
-    // Dedup: skip if already sent recently
-    if (isSent(sig) || recentSigs[sig]) {
-      console.log('[TrigifyX] Duplicate submission skipped');
-      return;
-    }
-
-    // Mark as in-flight (in-memory, 5s window)
-    recentSigs[sig] = true;
-    setTimeout(function () { delete recentSigs[sig]; }, 5000);
-
-    // Persist sent marker immediately (survives page reload)
-    markSent(sig);
-
-    var item = {
-      id: Date.now() + '_' + Math.random().toString(36).slice(2, 10),
-      token: TOKEN,
-      sig: sig,
-      fields: fields,
-      page: location.href,
-      ts: Date.now()
+    const STORAGE = {
+        QUEUE: "trigifyx_queue_v2",
+        SENT: "trigifyx_sent_v2"
     };
 
-    console.log('[TrigifyX] Submitting:', keys.join(', '));
+    /* -------------------------------------------------------
+       Runtime State
+    ------------------------------------------------------- */
 
-    // Add to queue (in case send fails)
-    addToQueue(item);
+    const inFlight = new Set();
+    const recent = new Set();
 
-    // Send immediately
-    processItem(item, 0);
-  }
+    /* -------------------------------------------------------
+       Local Storage Helpers
+    ------------------------------------------------------- */
 
-  // --- Attach to a form ---
-  function attach(form) {
-    if (form._trigifyxAttached) return;
-    form._trigifyxAttached = true;
-
-    // Use capture phase to ensure we run before any other handler
-    form.addEventListener('submit', function (e) {
-      handleSubmit(form, e);
-    }, true); // capture = true
-  }
-
-  // --- Scan for forms ---
-  function scan() {
-    var forms = document.querySelectorAll('form');
-    for (var i = 0; i < forms.length; i++) {
-      attach(forms[i]);
-    }
-  }
-
-  // --- Observe dynamically added forms ---
-  function startObserver() {
-    if (!window.MutationObserver) return;
-    var obs = new MutationObserver(function (mutations) {
-      for (var i = 0; i < mutations.length; i++) {
-        var added = mutations[i].addedNodes || [];
-        for (var j = 0; j < added.length; j++) {
-          var node = added[j];
-          if (node.nodeType !== 1) continue; // not an element
-          if (node.tagName === 'FORM') {
-            attach(node);
-          } else {
-            var subForms = node.querySelectorAll('form');
-            for (var k = 0; k < subForms.length; k++) {
-              attach(subForms[k]);
-            }
-          }
+    function read(key, fallback) {
+        try {
+            const value = localStorage.getItem(key);
+            return value ? JSON.parse(value) : fallback;
+        } catch {
+            return fallback;
         }
-      }
-    });
-    obs.observe(document.documentElement, { childList: true, subtree: true });
-  }
+    }
 
-  // --- Init ---
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
-      scan();
-      flushQueue();
-      startObserver();
-    });
-  } else {
-    scan();
-    flushQueue();
-    startObserver();
-  }
+    function write(key, value) {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (_) {}
+    }
+
+    /* -------------------------------------------------------
+       Queue Helpers
+    ------------------------------------------------------- */
+
+    function getQueue() {
+        return read(STORAGE.QUEUE, []);
+    }
+
+    function saveQueue(queue) {
+        write(STORAGE.QUEUE, queue);
+    }
+
+    function enqueue(item) {
+        const queue = getQueue();
+
+        const exists = queue.some(q => q.id === item.id);
+
+        if (!exists) {
+            queue.push(item);
+            saveQueue(queue);
+        }
+    }
+
+    function dequeue(id) {
+        const queue = getQueue().filter(x => x.id !== id);
+        saveQueue(queue);
+    }
+
+    /* -------------------------------------------------------
+       Delivered Signatures
+    ------------------------------------------------------- */
+
+    function delivered() {
+        return read(STORAGE.SENT, {});
+    }
+
+    function alreadyDelivered(signature) {
+        return !!delivered()[signature];
+    }
+
+    function markDelivered(signature) {
+
+        const map = delivered();
+
+        map[signature] = Date.now();
+
+        const keys = Object.keys(map);
+
+        if (keys.length > 300) {
+
+            keys.sort((a, b) => map[a] - map[b]);
+
+            while (keys.length > 300) {
+                delete map[keys.shift()];
+            }
+        }
+
+        write(STORAGE.SENT, map);
+    }
+
+    /* -------------------------------------------------------
+       Form Data Collection
+    ------------------------------------------------------- */
+
+    function collect(form) {
+
+        const data = {};
+
+        const elements = form.querySelectorAll(
+            "input,textarea,select"
+        );
+
+        elements.forEach(el => {
+
+            if (el.disabled)
+                return;
+
+            if (
+                el.type === "submit" ||
+                el.type === "button" ||
+                el.type === "reset"
+            )
+                return;
+
+            if (el.type === "password")
+                return;
+
+            const name =
+                el.name ||
+                el.id ||
+                null;
+
+            if (!name)
+                return;
+
+            if (
+                el.type === "checkbox" ||
+                el.type === "radio"
+            ) {
+
+                if (!el.checked)
+                    return;
+
+                if (data[name])
+                    data[name] += ", " + el.value;
+                else
+                    data[name] = el.value;
+
+                return;
+            }
+
+            const value = (el.value || "").trim();
+
+            if (value !== "")
+                data[name] = value;
+
+        });
+
+        return data;
+    }
+
+    /* -------------------------------------------------------
+       Submission Signature
+    ------------------------------------------------------- */
+
+    function signature(fields) {
+
+        return JSON.stringify(fields) +
+            "|" +
+            location.origin +
+            location.pathname;
+
+    }
+
+        /* -------------------------------------------------------
+       Send To Worker
+    ------------------------------------------------------- */
+
+    async function deliver(item) {
+
+        const response = await fetch(
+            API_BASE + "/api/submit",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                    accessToken: item.token,
+                    fields: item.fields,
+                    page: item.page
+                })
+            }
+        );
+
+        if (!response.ok) {
+            throw new Error("HTTP " + response.status);
+        }
+
+        return response.json();
+
+    }
+
+    /* -------------------------------------------------------
+       Retry Delay
+    ------------------------------------------------------- */
+
+    function retryDelay(attempt) {
+
+        return Math.min(
+            1000 * Math.pow(2, attempt),
+            30000
+        );
+
+    }
+
+    /* -------------------------------------------------------
+       Send One Queue Item
+    ------------------------------------------------------- */
+
+    async function sendOne(item, attempt = 0) {
+
+        if (inFlight.has(item.id))
+            return;
+
+        if (alreadyDelivered(item.signature)) {
+
+            dequeue(item.id);
+            return;
+
+        }
+
+        inFlight.add(item.id);
+
+        try {
+
+            const result = await deliver(item);
+
+            if (!result.ok)
+                throw new Error("Worker rejected request");
+
+            dequeue(item.id);
+
+            markDelivered(item.signature);
+
+            recent.delete(item.signature);
+
+            console.log(
+                "[TrigifyX] Delivered successfully."
+            );
+
+        }
+        catch (err) {
+
+            console.warn(
+                "[TrigifyX] Delivery failed.",
+                err.message
+            );
+
+            if (attempt < 5) {
+
+                setTimeout(function () {
+
+                    sendOne(
+                        item,
+                        attempt + 1
+                    );
+
+                }, retryDelay(attempt));
+
+            }
+            else {
+
+                console.warn(
+                    "[TrigifyX] Item kept in offline queue."
+                );
+
+                recent.delete(item.signature);
+
+            }
+
+        }
+        finally {
+
+            inFlight.delete(item.id);
+
+        }
+
+    }
+
+    /* -------------------------------------------------------
+       Flush Offline Queue
+    ------------------------------------------------------- */
+
+    function flushQueue() {
+
+        const queue = getQueue();
+
+        if (!queue.length)
+            return;
+
+        console.log(
+            "[TrigifyX] Flushing",
+            queue.length,
+            "queued submissions."
+        );
+
+        queue.forEach(item => {
+
+            sendOne(item);
+
+        });
+
+    }
+
+    /* -------------------------------------------------------
+       Connectivity Recovery
+    ------------------------------------------------------- */
+
+    window.addEventListener(
+        "online",
+        flushQueue
+    );
+
+    document.addEventListener(
+        "visibilitychange",
+        function () {
+
+            if (!document.hidden)
+                flushQueue();
+
+        }
+    );
+
+    window.addEventListener(
+        "focus",
+        flushQueue
+    );
+
+        /* -------------------------------------------------------
+       Submit Handler
+    ------------------------------------------------------- */
+
+    function handleSubmit(form, event) {
+
+        // Don't block the site's normal submission.
+        // Queue the data and let the website continue normally.
+
+        const fields = collect(form);
+
+        if (!Object.keys(fields).length)
+            return;
+
+        const sig = signature(fields);
+
+        // Already delivered
+        if (alreadyDelivered(sig))
+            return;
+
+        // Duplicate within current page session
+        if (recent.has(sig))
+            return;
+
+        recent.add(sig);
+
+        // Remove from memory after a short period
+        setTimeout(function () {
+            recent.delete(sig);
+        }, 5000);
+
+        const item = {
+            id:
+                Date.now() +
+                "_" +
+                Math.random()
+                    .toString(36)
+                    .slice(2, 10),
+
+            token: ACCESS_TOKEN,
+
+            signature: sig,
+
+            fields: fields,
+
+            page: location.href,
+
+            ts: Date.now()
+        };
+
+        // Prevent duplicate queue entries
+        const queue = getQueue();
+
+        const exists = queue.some(function (q) {
+            return q.signature === sig;
+        });
+
+        if (!exists) {
+            enqueue(item);
+        }
+
+        sendOne(item);
+
+        // NOTE:
+        // We intentionally DO NOT call:
+        //
+        // event.preventDefault();
+        // event.stopPropagation();
+        //
+        // This ensures the website's own form
+        // continues to work normally.
+
+    }
+
+    /* -------------------------------------------------------
+       Attach Form
+    ------------------------------------------------------- */
+
+    function attach(form) {
+
+        if (form.__trigifyxAttached)
+            return;
+
+        form.__trigifyxAttached = true;
+
+        form.addEventListener(
+            "submit",
+            function (e) {
+
+                try {
+
+                    handleSubmit(form, e);
+
+                }
+                catch (err) {
+
+                    console.warn(
+                        "[TrigifyX]",
+                        err
+                    );
+
+                }
+
+            },
+            false
+        );
+
+    }
+
+    /* -------------------------------------------------------
+       Scan Existing Forms
+    ------------------------------------------------------- */
+
+    function scan() {
+
+        const forms =
+            document.querySelectorAll("form");
+
+        forms.forEach(function (form) {
+
+            attach(form);
+
+        });
+
+    }
+
+
+        /* -------------------------------------------------------
+       Observe Dynamically Added Forms
+    ------------------------------------------------------- */
+
+    function startObserver() {
+
+        if (!window.MutationObserver)
+            return;
+
+        const observer = new MutationObserver(function (mutations) {
+
+            mutations.forEach(function (mutation) {
+
+                mutation.addedNodes.forEach(function (node) {
+
+                    if (node.nodeType !== 1)
+                        return;
+
+                    // Directly added form
+                    if (node.tagName === "FORM") {
+                        attach(node);
+                        return;
+                    }
+
+                    // Forms inside newly added containers
+                    if (node.querySelectorAll) {
+
+                        const forms =
+                            node.querySelectorAll("form");
+
+                        forms.forEach(function (form) {
+                            attach(form);
+                        });
+
+                    }
+
+                });
+
+            });
+
+        });
+
+        observer.observe(document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+
+    }
+
+    /* -------------------------------------------------------
+       Initialization
+    ------------------------------------------------------- */
+
+    function init() {
+
+        console.log(
+            "[TrigifyX] Capture initialized."
+        );
+
+        scan();
+
+        flushQueue();
+
+        startObserver();
+
+    }
+
+    /* -------------------------------------------------------
+       DOM Ready
+    ------------------------------------------------------- */
+
+    if (document.readyState === "loading") {
+
+        document.addEventListener(
+            "DOMContentLoaded",
+            init
+        );
+
+    }
+    else {
+
+        init();
+
+    }
+
 })();`;
 
 export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
 
-    if (request.method === "OPTIONS") {
-      return corsResponse(new Response(null, { status: 204 }), env);
+    async fetch(request, env, ctx) {
+
+        const url = new URL(request.url);
+
+        // -----------------------------
+        // CORS Preflight
+        // -----------------------------
+        if (request.method === "OPTIONS") {
+            return cors(
+                new Response(null, {
+                    status: 204
+                }),
+                env
+            );
+        }
+
+        try {
+
+            switch (url.pathname) {
+
+                case "/":
+
+                case "/health":
+
+                    return health(env);
+
+                case "/trigifyx-capture.js":
+
+                    return serveCapture(CAPTURE_JS);
+
+                case "/api/submit":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleSubmit(
+                        request,
+                        env,
+                        ctx
+                    );
+
+                default:
+
+                    return json(
+                        {
+                            ok: false,
+                            error: "Not Found"
+                        },
+                        404,
+                        env
+                    );
+
+            }
+
+        }
+        catch (err) {
+
+            console.error(err);
+
+            return json(
+                {
+                    ok: false,
+                    error: "Internal Server Error"
+                },
+                500,
+                env
+            );
+
+        }
+
     }
 
-    if (url.pathname === "/health" || url.pathname === "/") {
-      const configured = !!(
-        getEnv(env, "TELEGRAM_BOT_TOKEN", "BOT_TOKEN") &&
-        getEnv(env, "FIREBASE_DB_URL", "DB_URL")
-      );
-      return json({
-        ok: true,
-        service: "trigifyx-worker",
-        configured,
-        note: "POST form submissions to /api/submit",
-      }, 200, env);
-    }
-
-    if (url.pathname === "/trigifyx-capture.js") {
-      return new Response(CAPTURE_JS, {
-        headers: {
-          "Content-Type": "application/javascript; charset=utf-8",
-          "Cache-Control": "public, max-age=86400",
-        },
-      });
-    }
-
-    const path = url.pathname.replace(/\/+$/, "");
-    if (path === "/api/submit" && request.method === "POST") {
-      return handleSubmit(request, env);
-    }
-
-    return json(
-      { ok: false, error: "not found. POST to /api/submit" },
-      404,
-      env
-    );
-  },
 };
 
+/* ============================================================
+   Environment Helper
+============================================================ */
+
 function getEnv(env, ...names) {
-  for (const n of names) {
-    if (env[n]) return env[n];
-  }
-  return "";
+
+    for (const name of names) {
+
+        if (env[name])
+            return env[name];
+
+    }
+
+    return "";
+
 }
 
-async function handleSubmit(request, env) {
-  const botToken = getEnv(env, "TELEGRAM_BOT_TOKEN", "BOT_TOKEN");
-  const dbUrlBase = getEnv(env, "FIREBASE_DB_URL", "DB_URL");
+/* ============================================================
+   Health
+============================================================ */
 
-  if (!botToken) {
-    return json({ ok: false, error: "server misconfigured (bot token)" }, 500, env);
-  }
-  if (!dbUrlBase) {
-    return json({ ok: false, error: "server misconfigured (db url)" }, 500, env);
-  }
+function health(env) {
 
-  let payload;
-  try {
-    payload = await request.json();
-  } catch (e) {
-    return json({ ok: false, error: "invalid json" }, 400, env);
-  }
-
-  const { accessToken, fields, page } = payload || {};
-  if (!accessToken || typeof accessToken !== "string") {
-    return json({ ok: false, error: "missing accessToken" }, 400, env);
-  }
-  if (!fields || typeof fields !== "object") {
-    return json({ ok: false, error: "missing fields" }, 400, env);
-  }
-
-  const dbUrl = dbUrlBase.replace(/\/$/, "");
-  let chatId = null;
-  let fbStatus = null;
-  let fbBody = null;
-  try {
-    const r = await fetch(
-      dbUrl + "/pub/" + encodeURIComponent(accessToken) + "/telegram.json"
-    );
-    fbStatus = r.status;
-    fbBody = (await r.text()) || "";
-    if (r.ok) {
-      let v = null;
-      try { v = JSON.parse(fbBody); } catch (_) { v = null; }
-      if (v) chatId = String(v).trim();
-    }
-  } catch (e) {
-    fbStatus = "fetch-error";
-    fbBody = e.message;
-  }
-  if (!chatId) {
     return json(
-      {
-        ok: false,
-        error: "no destination linked for this token",
-        debug: {
-          accessToken: accessToken.slice(0, 8) + "...",
-          dbUrl: dbUrl,
-          firebaseStatus: fbStatus,
-          firebaseBody: fbBody.slice(0, 120),
+        {
+            ok: true,
+
+            service: "TrigifyX",
+
+            configured: {
+
+                telegram:
+                    !!getEnv(
+                        env,
+                        "TELEGRAM_BOT_TOKEN"
+                    ),
+
+                firebase:
+                    !!getEnv(
+                        env,
+                        "FIREBASE_DB_URL"
+                    )
+
+            },
+
+            timestamp: Date.now()
+
         },
-      },
-      404,
-      env
+        200,
+        env
     );
-  }
 
-  const text = buildMessage(fields, page);
-  try {
-    const res = await fetch(
-      "https://api.telegram.org/bot" + botToken + "/sendMessage",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chat_id: chatId,
-          text,
-          parse_mode: "HTML",
-          disable_web_page_preview: true,
-        }),
-      }
-    );
-    if (!res.ok) {
-      const body = await res.text();
-      return json({ ok: false, error: "telegram failed: " + res.status + " " + (body || "").slice(0, 200) }, 502, env);
-    }
-    return json({ ok: true }, env);
-  } catch (e) {
-    return json({ ok: false, error: "delivery failed: " + e.message }, 500, env);
-  }
 }
 
-function buildMessage(fields, page) {
-  const lines = ["<b>New form submission</b>"];
-  const keys = Object.keys(fields || {});
-  if (keys.length === 0) lines.push("(no fields captured)");
-  else
-    keys.forEach((k) => {
-      lines.push("<b>" + esc(k) + ":</b> " + esc(String(fields[k])));
+/* ============================================================
+   Serve Capture Script
+============================================================ */
+
+function serveCapture(script) {
+
+    return new Response(script, {
+
+        headers: {
+
+            "Content-Type":
+                "application/javascript; charset=utf-8",
+
+            "Cache-Control":
+                "public, max-age=86400"
+
+        }
+
     });
-  lines.push("");
-  lines.push("<i>Page:</i> " + esc(page || "unknown"));
-  lines.push("via TrigifyX");
-  return lines.join("\n");
+
 }
 
-function esc(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+/* ============================================================
+   JSON Helper
+============================================================ */
+
+function json(body, status = 200, env = {}) {
+
+    return cors(
+
+        new Response(
+            JSON.stringify(body),
+            {
+                status,
+
+                headers: {
+
+                    "Content-Type":
+                        "application/json"
+
+                }
+            }
+        ),
+
+        env
+
+    );
+
 }
 
-function json(obj, status = 200, env = {}) {
-  return corsResponse(
-    new Response(JSON.stringify(obj), {
-      status,
-      headers: { "Content-Type": "application/json" },
-    }),
+/* ============================================================
+   CORS
+============================================================ */
+
+function cors(response, env) {
+
+    const allowed =
+        getEnv(env, "ALLOWED_ORIGINS") || "*";
+
+    response.headers.set(
+        "Access-Control-Allow-Origin",
+        allowed
+    );
+
+    response.headers.set(
+        "Access-Control-Allow-Methods",
+        "GET,POST,OPTIONS"
+    );
+
+    response.headers.set(
+        "Access-Control-Allow-Headers",
+        "Content-Type"
+    );
+
+    response.headers.set(
+        "Access-Control-Max-Age",
+        "86400"
+    );
+
+    return response;
+
+}
+
+/* ============================================================
+   Handle Form Submission
+============================================================ */
+
+async function handleSubmit(request, env, ctx) {
+
+    // --------------------------------------------------------
+    // Validate Content-Type
+    // --------------------------------------------------------
+
+    const contentType =
+        request.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+
+        return json(
+            {
+                ok: false,
+                error: "Content-Type must be application/json"
+            },
+            400,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Parse Request Body
+    // --------------------------------------------------------
+
+    let payload;
+
+    try {
+
+        payload = await request.json();
+
+    }
+    catch {
+
+        return json(
+            {
+                ok: false,
+                error: "Invalid JSON body"
+            },
+            400,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Extract Fields
+    // --------------------------------------------------------
+
+    const {
+        accessToken,
+        fields,
+        page
+    } = payload || {};
+
+    // --------------------------------------------------------
+    // Validate Access Token
+    // --------------------------------------------------------
+
+    if (
+        typeof accessToken !== "string" ||
+        accessToken.trim() === ""
+    ) {
+
+        return json(
+            {
+                ok: false,
+                error: "Missing accessToken"
+            },
+            400,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Validate Form Fields
+    // --------------------------------------------------------
+
+    if (
+        typeof fields !== "object" ||
+        fields === null ||
+        Array.isArray(fields)
+    ) {
+
+        return json(
+            {
+                ok: false,
+                error: "Invalid fields object"
+            },
+            400,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Prevent Empty Submissions
+    // --------------------------------------------------------
+
+    if (
+        Object.keys(fields).length === 0
+    ) {
+
+        return json(
+            {
+                ok: false,
+                error: "No form fields received"
+            },
+            400,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Validate Page URL
+    // --------------------------------------------------------
+
+    let pageUrl = "";
+
+    if (
+        typeof page === "string"
+    ) {
+
+        pageUrl = page.trim();
+
+    }
+
+    if (!pageUrl) {
+
+        pageUrl = "Unknown";
+
+    }
+
+    // --------------------------------------------------------
+    // Limit Number Of Fields
+    // --------------------------------------------------------
+
+    if (
+        Object.keys(fields).length > 100
+    ) {
+
+        return json(
+            {
+                ok: false,
+                error: "Too many fields"
+            },
+            413,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // Sanitize Field Values
+    // --------------------------------------------------------
+
+    const sanitizedFields = {};
+
+    for (const key of Object.keys(fields)) {
+
+        const safeKey =
+            String(key)
+                .trim()
+                .slice(0, 100);
+
+        const safeValue =
+            String(fields[key] ?? "")
+                .trim()
+                .slice(0, 5000);
+
+        sanitizedFields[safeKey] = safeValue;
+
+    }
+
+    // --------------------------------------------------------
+    // Continue Processing
+    // --------------------------------------------------------
+
+    return await resolveDestination(
+
+        {
+            accessToken: accessToken.trim(),
+            fields: sanitizedFields,
+            page: pageUrl
+        },
+
+        env,
+        ctx
+
+    );
+
+}
+
+/* ============================================================
+   Resolve Destination (Firebase)
+============================================================ */
+
+async function resolveDestination(data, env, ctx) {
+
+    const firebaseBase =
+        getEnv(
+            env,
+            "FIREBASE_DB_URL"
+        ).replace(/\/$/, "");
+
+    if (!firebaseBase) {
+
+        return json(
+            {
+                ok: false,
+                error: "Firebase not configured"
+            },
+            500,
+            env
+        );
+
+    }
+
+    const cacheKey =
+        "https://cache.trigifyx/" +
+        encodeURIComponent(data.accessToken);
+
+    const cache =
+        caches.default;
+
+    /* --------------------------------------------------------
+       Check Cloudflare Cache
+    -------------------------------------------------------- */
+
+    let cached =
+        await cache.match(cacheKey);
+
+    if (cached) {
+
+        const cachedJson =
+            await cached.json();
+
+        return await sendTelegram(
+
+            cachedJson.chatId,
+
+            data.fields,
+
+            data.page,
+
+            env
+
+        );
+
+    }
+
+    /* --------------------------------------------------------
+       Lookup Firebase
+    -------------------------------------------------------- */
+
+    const firebaseURL =
+        firebaseBase +
+        "/pub/" +
+        encodeURIComponent(
+            data.accessToken
+        ) +
+        "/telegram.json";
+
+    let response;
+
+    try {
+
+        response =
+            await fetch(firebaseURL, {
+
+                headers: {
+
+                    "Accept":
+                        "application/json"
+
+                }
+
+            });
+
+    }
+    catch {
+
+        return json(
+            {
+                ok: false,
+                error: "Unable to reach Firebase"
+            },
+            502,
+            env
+        );
+
+    }
+
+    if (!response.ok) {
+
+        return json(
+            {
+                ok: false,
+                error: "Firebase lookup failed"
+            },
+            404,
+            env
+        );
+
+    }
+
+    let value;
+
+    try {
+
+        value =
+            await response.json();
+
+    }
+    catch {
+
+        return json(
+            {
+                ok: false,
+                error: "Invalid Firebase response"
+            },
+            500,
+            env
+        );
+
+    }
+
+    if (
+        !value ||
+        String(value).trim() === ""
+    ) {
+
+        return json(
+            {
+                ok: false,
+                error: "Access token not linked"
+            },
+            404,
+            env
+        );
+
+    }
+
+    const chatId =
+        String(value).trim();
+
+    /* --------------------------------------------------------
+       Cache chatId
+    -------------------------------------------------------- */
+
+    ctx.waitUntil(
+
+        cache.put(
+
+            cacheKey,
+
+            new Response(
+
+                JSON.stringify({
+
+                    chatId
+
+                }),
+
+                {
+
+                    headers: {
+
+                        "Content-Type":
+                            "application/json",
+
+                        "Cache-Control":
+                            "public, max-age=300"
+
+                    }
+
+                }
+
+            )
+
+        )
+
+    );
+
+    /* --------------------------------------------------------
+       Continue
+    -------------------------------------------------------- */
+
+    return await sendTelegram(
+
+        chatId,
+
+        data.fields,
+
+        data.page,
+
+        env
+
+    );
+
+}
+
+/* ============================================================
+   Send Telegram Message
+============================================================ */
+
+async function sendTelegram(
+    chatId,
+    fields,
+    page,
     env
-  );
+) {
+
+    const botToken =
+        getEnv(
+            env,
+            "TELEGRAM_BOT_TOKEN"
+        );
+
+    if (!botToken) {
+
+        return json(
+            {
+                ok: false,
+                error: "Telegram bot token not configured"
+            },
+            500,
+            env
+        );
+
+    }
+
+    const message =
+        buildMessage(
+            fields,
+            page
+        );
+
+    const telegramURL =
+        `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+    let response;
+
+    try {
+
+        response = await fetch(
+            telegramURL,
+            {
+
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    chat_id: chatId,
+
+                    text: message,
+
+                    parse_mode: "HTML",
+
+                    disable_web_page_preview: true
+
+                })
+
+            }
+        );
+
+    }
+    catch (err) {
+
+        return json(
+            {
+                ok: false,
+                error: "Unable to reach Telegram"
+            },
+            502,
+            env
+        );
+
+    }
+
+    let telegramResult;
+
+    try {
+
+        telegramResult =
+            await response.json();
+
+    }
+    catch {
+
+        telegramResult = {};
+
+    }
+
+    if (!response.ok || !telegramResult.ok) {
+
+        return json(
+            {
+                ok: false,
+                error: "Telegram API error",
+                telegram: telegramResult
+            },
+            502,
+            env
+        );
+
+    }
+
+    return json(
+        {
+            ok: true,
+            delivered: true,
+            telegramMessageId:
+                telegramResult.result?.message_id || null
+        },
+        200,
+        env
+    );
+
 }
 
-function corsResponse(res, env) {
-  res.headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.headers.set("Access-Control-Allow-Headers", "Content-Type");
-  const allowed = (getEnv(env, "ALLOWED_ORIGINS", "ALLOWED_ORIGIN") || "*")
-    .split(",")
-    .map((s) => s.trim());
-  if (allowed[0] === "*") {
-    res.headers.set("Access-Control-Allow-Origin", "*");
-  }
-  return res;
+/* ============================================================
+   Build Telegram Message
+============================================================ */
+
+function buildMessage(
+    fields,
+    page
+) {
+
+    const lines = [];
+
+    lines.push(
+        "📩 <b>New Form Submission</b>"
+    );
+
+    lines.push("");
+
+    for (const key of Object.keys(fields)) {
+
+        lines.push(
+            "<b>" +
+            escapeHTML(key) +
+            "</b>"
+        );
+
+        lines.push(
+            escapeHTML(
+                String(fields[key])
+            )
+        );
+
+        lines.push("");
+
+    }
+
+    lines.push(
+        "🌐 <b>Page</b>"
+    );
+
+    lines.push(
+        escapeHTML(page)
+    );
+
+    lines.push("");
+
+    lines.push(
+        "⚡ Powered by TrigifyX"
+    );
+
+    return lines.join("\n");
+
+}
+
+/* ============================================================
+   HTML Escape
+============================================================ */
+
+function escapeHTML(value) {
+
+    return String(value)
+
+        .replace(/&/g, "&amp;")
+
+        .replace(/</g, "&lt;")
+
+        .replace(/>/g, "&gt;")
+
+        .replace(/"/g, "&quot;")
+
+        .replace(/'/g, "&#39;");
+
 }
