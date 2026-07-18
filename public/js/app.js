@@ -191,9 +191,11 @@ function renderProfile(p) {
 }
 
 function renderSnippet(p) {
-  // The capture script is served from Netlify (24/7, pure static).
-  const SCRIPT_BASE = ENV.scriptBase || "https://trigifyx.netlify.app";
-  const scriptSrc = SCRIPT_BASE.replace(/\/$/, "") + "/js/trigifyx-capture.js";
+  // The capture script is served from the user's OWN site by default
+  // (relative path), so it works without depending on an external host.
+  // Override with ENV.scriptBase only if you host it elsewhere.
+  const SCRIPT_BASE = ENV.scriptBase || "";
+  const scriptSrc = (SCRIPT_BASE.replace(/\/$/, "") + "/js/trigifyx-capture.js").replace(/^\//, "");
 
   // SECURITY: the public snippet contains ONLY the per-user access token.
   // The Telegram destination (chat id / @username) and the bot token are
@@ -202,6 +204,7 @@ function renderSnippet(p) {
   const token = p.accessToken || "";
   const snippet =
 `<!-- TrigifyX: paste before </body> on every page with a form -->
+<!-- Also upload js/trigifyx-capture.js to your site (same folder as this page) -->
 <script>
   window.TRIGIFYX = {
     accessToken: "${token}"
