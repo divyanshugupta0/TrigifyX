@@ -26,99 +26,254 @@
  *   POST /api/submit              -> body { accessToken, fields, page }
  */
 
-const CAPTURE_JS = `/* TrigifyX capture script (secure, backend-delivered) */
+const CAPTURE_JS = `/* TrigifyX v2 — Form-to-Telegram capture script */
 (function () {
+  'use strict';
+
   var cfg = window.TRIGIFYX || {};
   var ENV = window.__ENV__ || {};
-  if (!cfg.accessToken) {
-    console.warn("[TrigifyX] Missing window.TRIGIFYX.accessToken - capture disabled.");
+
+  // --- Config ---
+  var TOKEN = cfg.accessToken || '';
+  var API_BASE = (cfg.endpoint || ENV.apiBase || '').replace(/\\/$/, '');
+
+  if (!TOKEN) {
+    console.warn('[TrigifyX] Missing accessToken. No forms will be captured.');
     return;
   }
-  var API_BASE = (cfg.endpoint || ENV.apiBase || "").replace(/\\/$/, "");
   if (!API_BASE) {
-    console.warn("[TrigifyX] No endpoint configured (window.TRIGIFYX.endpoint). Capture disabled.");
+    console.warn('[TrigifyX] No endpoint. Set window.TRIGIFYX.endpoint or window.__ENV__.apiBase.');
     return;
   }
-  var QUEUE_KEY = "trigifyx_queue_v1";
-  var DELIVERED_KEY = "trigifyx_delivered_v1";
-  var SENT_SIGS = {};
-  var IN_FLIGHT = {};
+
+  console.log('[TrigifyX] Initialized — endpoint:', API_BASE);
+
+  // --- Storage keys ---
+  var QUEUE_KEY = 'trigifyx_queue';
+  var SENT_KEY = 'trigifyx_sent';
+
+  // --- In-memory dedup (cleared every 5s) ---
+  var recentSigs = {};
+
+  // --- Helpers ---
+  function readStore(key) {
+    try { return JSON.parse(localStorage.getItem(key) || '[]'); }
+    catch (e) { return []; }
+  }
+  function writeStore(key, items) {
+    try { localStorage.setItem(key, JSON.stringify(items)); } catch (e) {}
+  }
+  function isSent(sig) {
+    try {
+      var sent = JSON.parse(localStorage.getItem(SENT_KEY) || '{}');
+      return !!sent[sig];
+    } catch (e) { return false; }
+  }
+  function markSent(sig) {
+    try {
+      var sent = JSON.parse(localStorage.getItem(SENT_KEY) || '{}');
+      sent[sig] = Date.now();
+      // Keep only last 200 entries
+      var keys = Object.keys(sent);
+      if (keys.length > 200) {
+        keys.sort(function (a, b) { return sent[a] - sent[b]; });
+        for (var i = 0; i < keys.length - 200; i++) delete sent[keys[i]];
+      }
+      localStorage.setItem(SENT_KEY, JSON.stringify(sent));
+    } catch (e) {}
+  }
+
+  // --- Collect form data ---
   function collect(form) {
     var data = {};
-    var els = form.querySelectorAll("input, select, textarea");
+    var els = form.elements;
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
-      var name = el.name || el.id || ("field" + i);
-      if (el.type === "password") continue;
-      if (el.type === "submit" || el.type === "button") continue;
-      if (el.type === "checkbox" || el.type === "radio") {
-        if (el.checked) data[name] = data[name] ? data[name] + ", " + el.value : el.value;
+      if (!el.name && !el.id) continue;
+      if (el.type === 'submit' || el.type === 'button') continue;
+      if (el.type === 'password') continue;
+      var name = el.name || el.id;
+      if (el.type === 'checkbox') {
+        if (el.checked) data[name] = data[name] ? data[name] + ', ' + el.value : el.value;
+      } else if (el.type === 'radio') {
+        if (el.checked) data[name] = el.value;
       } else if (el.value) {
         data[name] = el.value;
       }
     }
     return data;
   }
-  function deliver(item) {
-    return fetch(API_BASE + "/api/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accessToken: item.token, fields: item.body.fields, page: item.body.page })
-    }).then(function (res) { if (!res.ok) throw new Error("HTTP " + res.status); return res; });
+
+  // --- Send to worker ---
+  function sendToWorker(fields, page, token) {
+    return fetch(API_BASE + '/api/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accessToken: token,
+        fields: fields,
+        page: page
+      })
+    }).then(function (res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.json();
+    });
   }
-  function readQueue() { try { return JSON.parse(localStorage.getItem(QUEUE_KEY) || "[]"); } catch (e) { return []; } }
-  function writeQueue(items) { try { localStorage.setItem(QUEUE_KEY, JSON.stringify(items)); } catch (e) {} }
-  function enqueue(item) { var q = readQueue(); q.push(item); writeQueue(q); }
-  function dequeue(id) { writeQueue(readQueue().filter(function (x) { return x.id !== id; })); }
-  function isDelivered(sig) { try { var d = JSON.parse(localStorage.getItem(DELIVERED_KEY) || "{}"); return !!d[sig]; } catch (e) { return false; } }
-  function markDelivered(sig) {
-    try {
-      var d = JSON.parse(localStorage.getItem(DELIVERED_KEY) || "{}");
-      d[sig] = Date.now();
-      var keys = Object.keys(d);
-      if (keys.length > 200) { keys.sort(function (a, b) { return d[a] - d[b]; }); for (var i = 0; i < keys.length - 200; i++) delete d[keys[i]]; }
-      localStorage.setItem(DELIVERED_KEY, JSON.stringify(d));
-    } catch (e) {}
+
+  // --- Queue management ---
+  function addToQueue(item) {
+    var q = readStore(QUEUE_KEY);
+    q.push(item);
+    writeStore(QUEUE_KEY, q);
   }
-  function sendOne(item, attempt) {
+  function removeFromQueue(id) {
+    writeStore(QUEUE_KEY, readStore(QUEUE_KEY).filter(function (x) { return x.id !== id; }));
+  }
+
+  // --- Retry with exponential backoff ---
+  function retry(item, attempt) {
     attempt = attempt || 0;
-    if (IN_FLIGHT[item.id]) return;
-    if (isDelivered(item.sig)) { dequeue(item.id); return; }
-    IN_FLIGHT[item.id] = true;
-    deliver(item).then(function (res) {
-      if (res.ok) { dequeue(item.id); markDelivered(item.sig); delete SENT_SIGS[item.sig]; }
-      else throw new Error("HTTP " + res.status);
-    }).catch(function (e) {
-      if (attempt < 5) { var delay = Math.min(1000 * Math.pow(2, attempt), 30000); setTimeout(function () { sendOne(item, attempt + 1); }, delay); }
-      else { console.warn("[TrigifyX] Send failed after retries:", e); delete SENT_SIGS[item.sig]; }
-    }).then(function () { delete IN_FLIGHT[item.id]; });
+    if (attempt > 5) {
+      console.warn('[TrigifyX] Failed after ' + attempt + ' retries:', item);
+      return;
+    }
+    var delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+    setTimeout(function () {
+      processItem(item, attempt);
+    }, delay);
   }
-  function flushQueue() { readQueue().forEach(function (item) { sendOne(item, 0); }); }
-  function submit(form, e) {
-    if (e && e.preventDefault) e.preventDefault();
-    // Prevent native form navigation/reload so flushQueue() cannot resend (no duplicates).
 
-    var data = collect(form);
-    var sig = JSON.stringify(data) + "|" + location.href;
-    if (isDelivered(sig) || SENT_SIGS[sig]) return;
-    SENT_SIGS[sig] = true;
-    setTimeout(function () { delete SENT_SIGS[sig]; }, 4000);
-    var item = { id: Date.now() + "_" + Math.random().toString(36).slice(2), token: cfg.accessToken, sig: sig, body: { fields: data, page: location.href, ts: Date.now() } };
-    // Mark delivered synchronously (persisted) so a native submit / reload
-    // cannot resend via flushQueue() (prevents triple delivery).
-    markDelivered(sig);
-
-    enqueue(item);
-    sendOne(item, 0);
+  function processItem(item, attempt) {
+    attempt = attempt || 0;
+    // Already sent? Remove from queue.
+    if (isSent(item.sig)) {
+      removeFromQueue(item.id);
+      return;
+    }
+    sendToWorker(item.fields, item.page, item.token).then(function (res) {
+      if (res && res.ok) {
+        removeFromQueue(item.id);
+        markSent(item.sig);
+        delete recentSigs[item.sig];
+        console.log('[TrigifyX] Sent successfully');
+      } else {
+        throw new Error('Unexpected response');
+      }
+    }).catch(function (err) {
+      console.warn('[TrigifyX] Send error:', err.message);
+      retry(item, attempt + 1);
+    });
   }
-  function attach(form) { if (form.__trigifyx) return; form.__trigifyx = true; form.addEventListener("submit", function (e) { e.preventDefault(); e.stopPropagation(); try { submit(form, e); } catch (err) { console.warn("[TrigifyX]", err); } }); }
-  function scan() { var forms = document.querySelectorAll("form"); for (var i = 0; i < forms.length; i++) attach(forms[i]); }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { scan(); flushQueue(); });
-  else { scan(); flushQueue(); }
-  var obs = window.MutationObserver && new MutationObserver(function (m) {
-    for (var i = 0; i < m.length; i++) { var nodes = m[i].addedNodes || []; for (var j = 0; j < nodes.length; j++) { if (nodes[j].nodeType === 1) { if (nodes[j].tagName === "FORM") attach(nodes[j]); else if (nodes[j].querySelectorAll) { var f = nodes[j].querySelectorAll("form"); for (var k = 0; k < f.length; k++) attach(f[k]); } } } }
-  });
-  if (obs) obs.observe(document.documentElement, { childList: true, subtree: true });
+
+  // --- Flush queued items on load ---
+  function flushQueue() {
+    var q = readStore(QUEUE_KEY);
+    console.log('[TrigifyX] Flushing ' + q.length + ' queued items');
+    q.forEach(function (item) { processItem(item, 0); });
+  }
+
+  // --- Core submit handler ---
+  function handleSubmit(form, event) {
+    // ALWAYS prevent native submission
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    var fields = collect(form);
+    var keys = Object.keys(fields);
+    if (keys.length === 0) {
+      console.warn('[TrigifyX] No fields collected from form');
+      return;
+    }
+
+    var sig = JSON.stringify(fields) + '|' + location.href;
+
+    // Dedup: skip if already sent recently
+    if (isSent(sig) || recentSigs[sig]) {
+      console.log('[TrigifyX] Duplicate submission skipped');
+      return;
+    }
+
+    // Mark as in-flight (in-memory, 5s window)
+    recentSigs[sig] = true;
+    setTimeout(function () { delete recentSigs[sig]; }, 5000);
+
+    // Persist sent marker immediately (survives page reload)
+    markSent(sig);
+
+    var item = {
+      id: Date.now() + '_' + Math.random().toString(36).slice(2, 10),
+      token: TOKEN,
+      sig: sig,
+      fields: fields,
+      page: location.href,
+      ts: Date.now()
+    };
+
+    console.log('[TrigifyX] Submitting:', keys.join(', '));
+
+    // Add to queue (in case send fails)
+    addToQueue(item);
+
+    // Send immediately
+    processItem(item, 0);
+  }
+
+  // --- Attach to a form ---
+  function attach(form) {
+    if (form._trigifyxAttached) return;
+    form._trigifyxAttached = true;
+
+    // Use capture phase to ensure we run before any other handler
+    form.addEventListener('submit', function (e) {
+      handleSubmit(form, e);
+    }, true); // capture = true
+  }
+
+  // --- Scan for forms ---
+  function scan() {
+    var forms = document.querySelectorAll('form');
+    for (var i = 0; i < forms.length; i++) {
+      attach(forms[i]);
+    }
+  }
+
+  // --- Observe dynamically added forms ---
+  function startObserver() {
+    if (!window.MutationObserver) return;
+    var obs = new MutationObserver(function (mutations) {
+      for (var i = 0; i < mutations.length; i++) {
+        var added = mutations[i].addedNodes || [];
+        for (var j = 0; j < added.length; j++) {
+          var node = added[j];
+          if (node.nodeType !== 1) continue; // not an element
+          if (node.tagName === 'FORM') {
+            attach(node);
+          } else {
+            var subForms = node.querySelectorAll('form');
+            for (var k = 0; k < subForms.length; k++) {
+              attach(subForms[k]);
+            }
+          }
+        }
+      }
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  // --- Init ---
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      scan();
+      flushQueue();
+      startObserver();
+    });
+  } else {
+    scan();
+    flushQueue();
+    startObserver();
+  }
 })();`;
 
 export default {
