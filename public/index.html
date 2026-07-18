@@ -1,149 +1,983 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>TrigifyX — Connect any form to Telegram</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="css/styles.css" />
-  <!-- Firebase v9+ modular SDK (ESM) -->
-  <script type="module" src="js/firebase-init.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>TrigifyX | Trigger • Notify • Automate</title>
+
+    <meta name="description"
+        content="Connect any website form to Telegram in seconds. Receive instant notifications from your forms using TrigifyX.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="css/styles.css">
+
+    <script type="module" src="js/firebase-init.js"></script>
 </head>
+
 <body>
-  <!-- Demo / env notice -->
-  <div id="env-note" class="note hide" style="max-width:980px;margin:14px auto 0;"></div>
 
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">T</div>
-      <div>TrigifyX<small>Forms → Telegram</small></div>
+    <div id="env-note" class="note hide"></div>
+
+    <!-- ===========================
+            NAVBAR
+    ============================ -->
+
+    <header class="topbar">
+
+        <div class="brand">
+
+            <img src="images/trigifyX.png" alt="TrigifyX Logo">
+
+            <div>
+
+                <span class="brand-title">TrigifyX</span>
+
+                <small>Trigger • Notify • Automate</small>
+
+            </div>
+
+        </div>
+
+        <nav class="desktop-nav">
+
+            <a href="#features">Features</a>
+
+            <a href="#how">How it Works</a>
+
+            <a href="#dashboard">Dashboard</a>
+
+        </nav>
+
+        <div class="right" id="topbar-right">
+
+            <span class="uid hide" id="top-uid"></span>
+
+            <button class="btn ghost hide" id="logout">
+
+                Log out
+
+            </button>
+
+        </div>
+
+    </header>
+
+    <main class="wrap">
+
+        <!-- =======================
+                AUTH VIEW
+        ======================== -->
+
+        <section id="auth-view">
+
+            <div class="hero">
+
+                <div class="hero-logo">
+
+                    <img src="images/trigifyX.png" alt="TrigifyX">
+
+                </div>
+
+                <span class="hero-badge">
+
+                    Instant Telegram Form Notifications
+
+                </span>
+
+                <h1>
+
+                    Connect any website form
+
+                    <span>to Telegram</span>
+
+                </h1>
+
+                <p class="lead">
+
+                    Stop checking emails.
+
+                    Receive every website submission directly in Telegram within seconds.
+
+                    TrigifyX works with any HTML form using a single script tag.
+
+                </p>
+
+            </div>
+
+            <div class="card auth-card">
+
+                <div class="pill-tabs">
+
+                    <div class="pill active" id="tab-signup">
+
+                        Sign Up
+
+                    </div>
+
+                    <div class="pill" id="tab-signin">
+
+                        Sign In
+
+                    </div>
+
+                </div>
+
+                <h2 id="auth-title">
+
+                    Create your account
+
+                </h2>
+
+                <input type="hidden" id="auth-mode" value="up">
+
+                <button class="btn google-btn block" id="auth-google">
+
+                    <span class="g-icon">G</span>
+
+                    Continue with Google
+
+                </button>
+
+                <div class="divider">
+
+                    <span>OR</span>
+
+                </div>
+
+                <div id="signup-only">
+
+                    <label>
+
+                        Full Name
+
+                    </label>
+
+                    <input id="auth-name"
+                        type="text"
+                        placeholder="John Doe">
+
+                    <label>
+
+                        Telegram Username
+
+                    </label>
+
+                    <input id="auth-tg"
+                        type="text"
+                        placeholder="@username or Chat ID">
+
+                </div>
+
+                <label>
+
+                    Email Address
+
+                </label>
+
+                <input id="auth-email"
+                    type="email"
+                    placeholder="you@example.com">
+
+                <label>
+
+                    Password
+
+                </label>
+
+                <input id="auth-pass"
+                    type="password"
+                    placeholder="••••••••">
+
+                <div id="signup-only-2">
+
+                    <label>
+
+                        Confirm Password
+
+                    </label>
+
+                    <input id="auth-pass2"
+                        type="password"
+                        placeholder="••••••••">
+
+                </div>
+
+                <button class="btn block mt" id="auth-submit">
+
+                    Create Account
+
+                </button>
+
+                <p class="muted center mt">
+
+                    Protected by Firebase Authentication.
+
+                </p>
+
+            </div>
+
+        </section>
+
+        <!-- =======================
+            COMPLETE PROFILE
+        ======================== -->
+
+        <section id="complete-view" class="hide">
+
+            <div class="card auth-card">
+
+                <h2>
+
+                    Complete your profile
+
+                </h2>
+
+                <p class="lead">
+
+                    We only need a few details before your dashboard is ready.
+
+                </p>
+
+                <div class="kv">
+
+                    <span class="k">
+
+                        Email
+
+                    </span>
+
+                    <span class="v" id="complete-email">
+
+                        —
+
+                    </span>
+
+                </div>
+
+                <label>
+
+                    Full Name
+
+                </label>
+
+                <input
+                    id="complete-name"
+                    type="text"
+                    placeholder="John Doe">
+
+                <label>
+
+                    Telegram Username
+
+                </label>
+
+                <input
+                    id="complete-tg"
+                    type="text"
+                    placeholder="@username">
+
+                <button
+                    class="btn block mt"
+                    id="complete-save">
+
+                    Save & Continue
+
+                </button>
+
+            </div>
+
+        </section>
+
+                <!-- =======================
+                DASHBOARD
+        ======================== -->
+
+        <section id="app-view" class="hide">
+
+            <div class="page-header">
+
+                <div>
+
+                    <span class="hero-badge">
+                        Dashboard
+                    </span>
+
+                    <h1>
+                        Welcome to TrigifyX
+                    </h1>
+
+                    <p class="lead">
+
+                        Manage your API key, connect Telegram and install
+                        TrigifyX on your website in under a minute.
+
+                    </p>
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    STATS
+            ======================== -->
+
+            <div class="stats-grid">
+
+                <div class="stat-card">
+
+                    <h3>Plan</h3>
+
+                    <p id="disp-plan">Free</p>
+
+                </div>
+
+                <div class="stat-card">
+
+                    <h3>Status</h3>
+
+                    <p>
+
+                        <span class="badge ok">
+                            Active
+                        </span>
+
+                    </p>
+
+                </div>
+
+                <div class="stat-card">
+
+                    <h3>Telegram</h3>
+
+                    <p id="disp-tg">
+                        —
+                    </p>
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    MAIN GRID
+            ======================== -->
+
+            <div class="grid">
+
+                <!-- ACCOUNT -->
+
+                <div class="card">
+
+                    <h2>
+
+                        Account Information
+
+                    </h2>
+
+                    <div class="kv">
+
+                        <span class="k">
+
+                            Name
+
+                        </span>
+
+                        <span
+                            class="v"
+                            id="disp-name">
+
+                            —
+
+                        </span>
+
+                    </div>
+
+                    <div class="kv">
+
+                        <span class="k">
+
+                            Email
+
+                        </span>
+
+                        <span
+                            class="v"
+                            id="disp-email">
+
+                            —
+
+                        </span>
+
+                    </div>
+
+                    <div class="kv">
+
+                        <span class="k">
+
+                            User ID
+
+                        </span>
+
+                        <span
+                            class="v"
+                            id="disp-uid">
+
+                            —
+
+                        </span>
+
+                    </div>
+
+                    <div class="kv">
+
+                        <span class="k">
+
+                            Joined
+
+                        </span>
+
+                        <span
+                            class="v"
+                            id="disp-created">
+
+                            —
+
+                        </span>
+
+                    </div>
+
+                </div>
+                <!-- API KEY -->
+
+                <div class="card">
+
+                    <h2>
+
+                        API Key
+
+                    </h2>
+
+                    <p class="lead">
+
+                        Your API key is generated and stored securely.
+                        Reveal it only when you are ready to connect a site.
+
+                    </p>
+
+                    <div
+                        id="apikey-locked"
+                        class="note">
+
+                        Your API key is hidden. Click
+                        <strong>Issue API Key</strong> to reveal it and
+                        generate your install snippet.
+
+                    </div>
+
+                    <div
+                        id="apikey-revealed"
+                        class="hide">
+
+                        <div class="api-box">
+
+                            <code
+                                id="disp-apikey">
+
+                                —
+
+                            </code>
+
+                        </div>
+
+                        <div class="row mt">
+
+                            <button
+                                class="btn ghost"
+                                id="copy-key">
+
+                                Copy
+
+                            </button>
+
+                            <button
+                                class="btn"
+                                id="regen">
+
+                                Regenerate
+
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                    <div class="row mt">
+
+                        <button
+                            class="btn"
+                            id="issue-key">
+
+                            Issue API Key
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    SITE VERIFICATION
+            ======================== -->
+
+            <div class="card">
+
+                <h2>
+
+                    Connect Your Website
+
+                </h2>
+
+                <p class="lead">
+
+                    Paste the snippet (after issuing your API key) before the
+                    closing &lt;/body&gt; tag of your site, then enter your
+                    site URL below and click
+                    <strong>Verify</strong>. We confirm the script is actually
+                    loaded on that domain before linking Telegram.
+
+                </p>
+
+                <label>
+
+                    Website URL / Endpoint
+
+                </label>
+
+                <input
+                    id="site-url"
+                    type="text"
+                    placeholder="https://yoursite.com">
+
+                <div class="row mt">
+
+                    <span
+                        class="badge warn"
+                        id="verify-status">
+
+                        Not Verified
+
+                    </span>
+
+                    <button
+                        class="btn"
+                        id="verify-site">
+
+                        Verify
+
+                    </button>
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    TELEGRAM
+            ======================== -->
+
+            <div
+                id="telegram-card"
+                class="card">
+
+                <h2>
+
+                    Telegram Destination
+
+                </h2>
+
+                <!-- Linked state: just the chat id + details -->
+                <div
+                    id="tg-linked"
+                    class="hide">
+
+                    <div class="kv">
+
+                        <span class="k">Linked Telegram</span>
+
+                        <span
+                            class="v"
+                            id="disp-tg-linked">
+
+                            —
+
+                        </span>
+
+                    </div>
+
+                    <div class="row mt">
+
+                        <span class="badge ok">Connected</span>
+
+                        <button
+                            class="btn ghost"
+                            id="tg-unlink">
+
+                            Change
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+                <!-- Setup state: steps + chat id -->
+                <div id="tg-setup">
+
+                    <div
+                        id="tg-steps"
+                        class="hide">
+
+                        <ol class="steps">
+
+                            <li>
+
+                                <h3>Open Telegram</h3>
+
+                                <p>
+                                    Search for
+                                    <strong>@TrigifyXbot</strong>
+                                    and open the chat.
+                                </p>
+
+                            </li>
+
+                            <li>
+
+                                <h3>Start the bot</h3>
+
+                                <p>
+                                    Tap the
+                                    <code>/start</code>
+                                    button or send
+                                    <code>/start</code>
+                                    to get your Chat ID.
+                                </p>
+
+                            </li>
+
+                            <li>
+
+                                <h3>Copy your Chat ID</h3>
+
+                                <p>
+                                    The bot replies with your numeric Chat ID.
+                                    Copy it and paste it below.
+                                </p>
+
+                            </li>
+
+                        </ol>
+
+                    </div>
+
+                    <label>
+
+                        Telegram Chat ID
+
+                    </label>
+
+                    <input
+                        id="tg-input"
+                        type="text"
+                        placeholder="123456789">
+
+                    <div class="row mt">
+
+                        <span
+                            class="badge warn"
+                            id="tg-status">
+
+                            Not Linked
+
+                        </span>
+
+                        <button
+                            class="btn"
+                            id="tg-save">
+
+                            Save & Link
+
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    INSTALL
+            ======================== -->
+
+            <div
+                id="install-card"
+                class="card hide">
+
+                <h2>
+
+                    Install on Your Website
+
+                </h2>
+
+                <p class="lead">
+
+                    Paste the following snippet before the closing
+                    &lt;/body&gt; tag.
+
+                </p>
+
+                <div class="code-wrapper">
+
+                    <textarea
+                        id="snippet"
+                        readonly>
+
+                    </textarea>
+
+                    <button
+                        class="copy"
+                        id="copy-snippet">
+
+                        Copy
+
+                    </button>
+
+                </div>
+
+                <div class="note">
+
+                    The installation script automatically detects every HTML
+                    form and forwards submissions to your connected Telegram
+                    account. Once your site is verified and Telegram is linked,
+                    this section is hidden.
+
+                </div>
+
+            </div>
+
+            <!-- =======================
+                    FEATURES
+            ======================== -->
+
+            <section
+                id="features"
+                class="feature-grid">
+
+                <div class="feature-card">
+
+                    <div class="feature-icon">
+
+                        ⚡
+
+                    </div>
+
+                    <h3>
+
+                        Instant Delivery
+
+                    </h3>
+
+                    <p>
+
+                        Receive form submissions in Telegram instantly.
+
+                    </p>
+
+                </div>
+
+                <div class="feature-card">
+
+                    <div class="feature-icon">
+
+                        🔒
+
+                    </div>
+
+                    <h3>
+
+                        Secure API
+
+                    </h3>
+
+                    <p>
+
+                        Firebase Authentication with unique API keys.
+
+                    </p>
+
+                </div>
+
+                <div class="feature-card">
+
+                    <div class="feature-icon">
+
+                        🌐
+
+                    </div>
+
+                    <h3>
+
+                        One Script
+
+                    </h3>
+
+                    <p>
+
+                        Works with virtually every HTML form.
+
+                    </p>
+
+                </div>
+
+            </section>
+
+            <!-- =======================
+                    HOW IT WORKS
+            ======================== -->
+
+            <section
+                id="how"
+                class="card">
+
+                <h2>
+
+                    How TrigifyX Works
+
+                </h2>
+
+                <ol class="steps">
+
+                    <li>
+
+                        <h3>
+
+                            Create Account
+
+                        </h3>
+
+                        <p>
+
+                            Register and receive your unique API key.
+
+                        </p>
+
+                    </li>
+
+                    <li>
+
+                        <h3>
+
+                            Connect Telegram
+
+                        </h3>
+
+                        <p>
+
+                            Link your Telegram account with @TrigifyXbot.
+
+                        </p>
+
+                    </li>
+
+                    <li>
+
+                        <h3>
+
+                            Install Script
+
+                        </h3>
+
+                        <p>
+
+                            Copy the installation snippet into your website.
+
+                        </p>
+
+                    </li>
+
+                    <li>
+
+                        <h3>
+
+                            Receive Notifications
+
+                        </h3>
+
+                        <p>
+
+                            Every form submission instantly appears in Telegram.
+
+                        </p>
+
+                    </li>
+
+                </ol>
+
+            </section>
+
+        </section>
+
+    </main>
+
+    <footer class="footer">
+
+        <div>
+
+            <img
+                src="images/trigifyX.png"
+                alt="TrigifyX">
+
+            <span>
+
+                TrigifyX
+
+            </span>
+
+        </div>
+
+        <p>
+
+            © 2026 TrigifyX • Trigger • Notify • Automate
+
+        </p>
+
+    </footer>
+
+    <div
+        class="toast"
+        id="toast">
+
     </div>
-    <div class="right" id="topbar-right">
-      <span class="uid hide" id="top-uid"></span>
-      <button class="btn ghost hide" id="logout">Log out</button>
-    </div>
-  </header>
 
-  <main class="wrap">
-    <!-- AUTH VIEW -->
-    <section id="auth-view">
-      <h1 class="center">Turn any website form into a Telegram alert</h1>
-      <p class="lead center">Sign in, grab your API key, link your Telegram, and drop one script tag on your site. Every form submission lands in your Telegram via <b>@TrigifyXbot</b>.</p>
+    <script src="js/env-injected.js"></script>
 
-      <div class="card" style="max-width:420px;margin:22px auto 0;">
-        <div class="pill-tabs center" style="justify-content:center;">
-          <div class="pill active" id="tab-signup">Sign up</div>
-          <div class="pill" id="tab-signin">Sign in</div>
-        </div>
-        <h2 id="auth-title">Create your TrigifyX account</h2>
-        <input type="hidden" id="auth-mode" value="up" />
+    <script src="js/config.js"></script>
 
-        <button class="btn block google-btn" id="auth-google" type="button">
-          <span class="g-icon">G</span> Continue with Google
-        </button>
-        <div class="divider"><span>or</span></div>
+    <script src="js/env.js"></script>
 
-        <div id="signup-only">
-          <label for="auth-name">Full name</label>
-          <input id="auth-name" type="text" placeholder="Jane Doe" autocomplete="name" />
-          <label for="auth-tg">Telegram username</label>
-          <input id="auth-tg" type="text" placeholder="@you or 123456789" autocomplete="off" />
-        </div>
+    <script
+        type="module"
+        src="js/app.js">
 
-        <label for="auth-email">Email</label>
-        <input id="auth-email" type="email" placeholder="you@site.com" autocomplete="email" />
-        <label for="auth-pass">Password</label>
-        <input id="auth-pass" type="password" placeholder="••••••••" autocomplete="new-password" />
-        <div id="signup-only-2">
-          <label for="auth-pass2">Re-enter password</label>
-          <input id="auth-pass2" type="password" placeholder="••••••••" autocomplete="new-password" />
-        </div>
-        <button class="btn block mt" id="auth-submit">Sign up</button>
-        <p class="muted center mt" style="font-size:12.5px;">Secured with Firebase Authentication.</p>
-      </div>
-    </section>
+    </script>
 
-    <!-- COMPLETE PROFILE VIEW (Google/SSO users missing details) -->
-    <section id="complete-view" class="hide">
-      <h1 class="center">Complete your profile</h1>
-      <p class="lead center">We need a few details to finish setting up your TrigifyX account and link your Telegram.</p>
-      <div class="card" style="max-width:420px;margin:22px auto 0;">
-        <h2>Almost there</h2>
-        <div class="kv"><span class="k">Email</span><span class="v" id="complete-email">—</span></div>
-        <label for="complete-name">Full name</label>
-        <input id="complete-name" type="text" placeholder="Jane Doe" autocomplete="name" />
-        <label for="complete-tg">Telegram username</label>
-        <input id="complete-tg" type="text" placeholder="@you or 123456789" autocomplete="off" />
-        <button class="btn block mt" id="complete-save">Save &amp; continue</button>
-      </div>
-    </section>
-
-    <!-- APP / DASHBOARD VIEW -->
-    <section id="app-view" class="hide">
-      <h1>Your TrigifyX dashboard</h1>
-      <p class="lead">Manage your API key, link your Telegram, and copy the snippet to install on your site.</p>
-
-      <div class="grid">
-        <!-- Account + API key -->
-        <div class="card">
-          <h2>Account &amp; API key</h2>
-          <div class="kv"><span class="k">Name</span><span class="v" id="disp-name">—</span></div>
-          <div class="kv"><span class="k">Email</span><span class="v" id="disp-email">—</span></div>
-          <div class="kv"><span class="k">Telegram</span><span class="v" id="disp-tg">—</span></div>
-          <div class="kv"><span class="k">User ID</span><span class="v" id="disp-uid">—</span></div>
-          <div class="kv"><span class="k">Plan</span><span class="v" id="disp-plan">free</span></div>
-          <div class="kv"><span class="k">Joined</span><span class="v" id="disp-created">—</span></div>
-          <div class="kv"><span class="k">API key</span><span class="v"><code class="inline" id="disp-apikey">—</code></span></div>
-          <div class="row mt">
-            <button class="btn ghost" id="copy-key">Copy key</button>
-            <button class="btn ghost" id="regen">Regenerate</button>
-          </div>
-        </div>
-
-        <!-- Telegram linking -->
-        <div class="card">
-          <h2>Telegram destination</h2>
-          <p class="lead">Where should submissions be delivered? Enter your chat ID or <code class="inline">@username</code>. Start a chat with <b>@TrigifyXbot</b> and send <code class="inline">/start</code> to get your chat ID.</p>
-          <label for="tg-input">Telegram chat ID or @username</label>
-          <input id="tg-input" type="text" placeholder="123456789 or @myaccount" />
-          <div class="row mt">
-            <span class="badge warn" id="tg-status">Not linked</span>
-            <button class="btn" id="tg-save">Save &amp; link</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Install snippet -->
-      <div class="card">
-        <h2>Install on your site</h2>
-        <p class="lead">Paste this before the <code class="inline">&lt;/body&gt;</code> tag on every page that has a form. The script captures all <code class="inline">&lt;form&gt;</code> submissions automatically.</p>
-        <div class="row" style="align-items:flex-start;">
-          <textarea id="snippet" readonly></textarea>
-          <button class="copy" id="copy-snippet">Copy</button>
-        </div>
-        <div class="note">The capture script is served from Netlify (24/7) and delivers submissions straight to Telegram — no backend server required. The bot token is injected from your deploy environment, so it's never in the source code.</div>
-      </div>
-
-      <!-- How it works -->
-      <div class="card">
-        <h2>How it works</h2>
-        <ol class="steps">
-          <li><h3>Generate</h3><p>Sign up and we issue a unique API key stored in your Firebase Realtime Database profile.</p></li>
-          <li><h3>Link Telegram</h3><p>Connect the Telegram account that should receive submissions via @TrigifyXbot.</p></li>
-          <li><h3>Embed</h3><p>Add the script snippet to your site. It auto-detects forms and captures submissions.</p></li>
-          <li><h3>Receive</h3><p>Each submission is sent through TrigifyXbot straight to your Telegram — instantly.</p></li>
-        </ol>
-      </div>
-    </section>
-  </main>
-
-  <div class="toast" id="toast"></div>
-
-  <!-- env-injected.js (gitignored) carries the bot token from deploy env vars.
-       Loaded first so window.__ENV__.botToken is set before the app runs. -->
-  <script src="js/env-injected.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/env.js"></script>
-  <script type="module" src="js/app.js"></script>
 </body>
+
 </html>

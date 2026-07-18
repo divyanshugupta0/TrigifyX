@@ -103,7 +103,9 @@ async function signUp(email, password, name, telegram) {
   }
   await set(ref(db, "users/" + cred.user.uid), profile);
   // Public lookup node: token -> telegram (chat id never in the snippet).
-  await set(ref(db, "pub/" + token), { telegram: telegram || "", uid: cred.user.uid });
+  // Written as sub-paths so the public `verify` pings are not overwritten.
+  await set(ref(db, "pub/" + token + "/telegram"), telegram || "");
+  await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
   return cred.user;
 }
 
@@ -166,8 +168,26 @@ function renderProfile(p) {
   $("#disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
 
   const linked = !!p.telegram;
-  $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
-  $("#tg-status").textContent = linked ? "Linked" : "Not linked";
+
+  // API key is hidden until the user issues it.
+  const issued = window.__apikeyIssued;
+  $("#apikey-locked").classList.toggle("hide", issued);
+  $("#apikey-revealed").classList.toggle("hide", !issued);
+  $("#issue-key").classList.toggle("hide", issued);
+
+  // Telegram card: linked vs setup.
+  $("#tg-linked").classList.toggle("hide", !linked);
+  $("#tg-setup").classList.toggle("hide", linked);
+  if (linked) {
+    $("#disp-tg-linked").textContent = p.telegram;
+  } else {
+    $("#tg-status").className = "badge warn";
+    $("#tg-status").textContent = "Not Linked";
+  }
+
+  // Install snippet only visible after issuing the key AND before linking.
+  const showInstall = issued && !linked;
+  $("#install-card").classList.toggle("hide", !showInstall);
 
   renderSnippet(p);
 }
@@ -257,16 +277,75 @@ function bindUI() {
 
   $("#tg-save").onclick = async () => {
     const val = $("#tg-input").value.trim();
-    if (!val) return toast("Enter a Telegram chat id or @username");
+    if (!val) return toast("Enter your Telegram chat id");
     const p = await getProfile(currentUser);
     p.telegram = val;
     await saveProfile(currentUser, p);
-    if (p.accessToken) {
-      const db = (window.__fb || {}).db;
-      await set(ref(db, "pub/" + p.accessToken), { telegram: val, uid: p.uid });
+    const db = (window.__fb || {}).db;
+    if (db && p.accessToken) {
+      // Write only the telegram sub-path so public verify pings survive.
+      await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
     }
     renderProfile(p);
     toast("Telegram account linked");
+  };
+
+  // Reveal the API key + install snippet (key already exists in RTDB).
+  $("#issue-key").onclick = () => {
+    window.__apikeyIssued = true;
+    renderProfile(currentProfile());
+  };
+
+  // Verify the snippet is actually installed on the entered site.
+  $("#verify-site").onclick = async () => {
+    const raw = $("#site-url").value.trim();
+    if (!raw) return toast("Enter your website URL");
+    if (!window.__apikeyIssued) return toast("Issue your API key first");
+    const p = currentProfile();
+    if (!p || !p.accessToken) return toast("API key not ready");
+
+    const origin = toOrigin(raw);
+    if (!origin) return toast("Invalid URL");
+
+    $("#verify-site").disabled = true;
+    $("#verify-status").className = "badge warn";
+    $("#verify-status").textContent = "Checking…";
+    try {
+      const ok = await verifySiteConnected(p.accessToken, origin);
+      if (ok) {
+        $("#verify-status").className = "badge ok";
+        $("#verify-status").textContent = "Verified";
+        window.__siteVerified = true;
+        // Reveal the Telegram linking steps.
+        $("#tg-steps").classList.remove("hide");
+        toast("Site connected. Link your Telegram below.");
+      } else {
+        $("#verify-status").className = "badge warn";
+        $("#verify-status").textContent = "Not Verified";
+        $("#tg-steps").classList.add("hide");
+        toast("Snippet not detected on that site yet. Install it and reload the page.");
+      }
+    } catch (e) {
+      $("#verify-status").className = "badge warn";
+      $("#verify-status").textContent = "Check failed";
+      toast(e.message || "Verification failed");
+    } finally {
+      $("#verify-site").disabled = false;
+    }
+  };
+
+  // Linked users can change their Telegram destination.
+  $("#tg-unlink").onclick = async () => {
+    const p = await getProfile(currentUser);
+    p.telegram = "";
+    await saveProfile(currentUser, p);
+    const db = (window.__fb || {}).db;
+    if (db && p.accessToken) {
+      await set(ref(db, "pub/" + p.accessToken + "/telegram"), "");
+    }
+    window.__siteVerified = true; // keep site verified, just re-link TG
+    renderProfile(p);
+    toast("Telegram unlinked. Enter a new chat id.");
   };
 
   $("#copy-key").onclick = () => copy($("#disp-apikey").textContent);
@@ -279,6 +358,41 @@ function bindUI() {
     renderProfile(p);
     toast("New API key generated");
   };
+}
+
+/* ---------- Helpers for site verification ---------- */
+
+function currentProfile() {
+  return window.__profile || null;
+}
+
+// Turn any URL or origin into a normalized origin string.
+function toOrigin(raw) {
+  try {
+    const url = new URL(raw.includes("://") ? raw : "https://" + raw);
+    return url.origin;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Firebase RTDB keys can't contain . $ # [ ] /. Encode the origin safely.
+function safeKey(origin) {
+  return origin.replace(/[.$#[\]/]/g, "_");
+}
+
+// Read the public verify node the capture script writes when loaded on a site.
+async function verifySiteConnected(token, origin) {
+  const RTDB = (window.__ENV__ || {}).databaseURL || "";
+  if (!RTDB) throw new Error("database not configured");
+  const base = RTDB.replace(/\/$/, "");
+  const res = await fetch(base + "/pub/" + encodeURIComponent(token) + "/verify.json");
+  if (!res.ok) throw new Error("verify request failed");
+  const data = await res.json();
+  if (!data) return false;
+  // Match either the exact origin key or any stored origin value.
+  if (data[safeKey(origin)]) return true;
+  return Object.keys(data).some((k) => data[k] && data[k].origin === origin);
 }
 
 function switchTab(mode) {
@@ -305,6 +419,9 @@ async function onLogin(u) {
     p = { uid: u.uid, email: u.email, apiKey: apiKey(), telegram: "", createdAt: Date.now(), plan: "free" };
     await saveProfile(u, p);
   }
+  window.__profile = p;
+  window.__apikeyIssued = false;
+  window.__siteVerified = false;
   // Backfill access token for users created before tokens existed.
   if (!p.accessToken) {
     p.accessToken = accessToken();
@@ -313,7 +430,8 @@ async function onLogin(u) {
   // Ensure the public lookup node exists (for the capture script).
   const db = (window.__fb || {}).db;
   if (db) {
-    await set(ref(db, "pub/" + p.accessToken), { telegram: p.telegram || "", uid: p.uid });
+    await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
+    await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
   }
   // If a Google/SSO user is missing required details, force profile completion.
   const missing = !p.name || !p.telegram;
@@ -341,6 +459,7 @@ function showProfileComplete(u, p) {
     p.name = name;
     p.telegram = tg;
     await saveProfile(u, p);
+    window.__profile = p;
     $("#complete-view").classList.add("hide");
     $("#disp-uid").textContent = u.uid;
     renderProfile(p);
