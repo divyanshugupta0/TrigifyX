@@ -32,7 +32,7 @@ User's website
 
 ### Why this design (no bot token in the browser)
 The capture script only ever sends `accessToken + fields + page` to the Worker. The
-Worker holds `TELEGRAM_BOT_TOKEN` as a Cloudflare secret and is the only thing that
+Worker holds the Telegram bot token as a Cloudflare secret and is the only thing that
 talks to `api.telegram.org`. The Telegram destination (chat id) is resolved
 **server-side** from `pub/{token}/telegram`, never embedded in the page source.
 
@@ -122,27 +122,32 @@ config is set there). If Firebase isn't reachable it falls back to **demo mode**
 (localStorage) so the UI still works.
 
 ### Cloudflare Worker secrets / vars
-Set these in the `trigifyx-worker` environment (wrangler / Cloudflare dashboard):
+Set these in the `trigifyx-worker` environment (wrangler / Cloudflare dashboard).
+The exact variable names are defined in `worker/wrangler.toml` and `worker/worker.js`
+— only their purpose is described here:
 
-| Name | Type | Purpose |
-|------|------|---------|
-| `TELEGRAM_BOT_TOKEN` | **Secret** | Server-side Telegram delivery. Never exposed to the browser. |
-| `FIREBASE_DB_URL` | Variable | RTDB base URL, e.g. `https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app`. |
-| `ALLOWED_ORIGINS` | Variable (optional) | CORS allowlist for `/api/submit` (defaults to `*`). |
+| Purpose | Type | Notes |
+|---------|------|-------|
+| Telegram bot token | **Secret** | Server-side Telegram delivery. Never exposed to the browser. |
+| Firebase database URL | Variable | RTDB base URL for resolving chat ids and storing bookkeeping. |
+| CORS origin allowlist | Variable (optional) | Restricts `/api/submit` origins (defaults to open). |
 
 ### Telegram bot (optional helper)
 Set on the host that runs `bot/server.py` (e.g. `cloud.tranger.xyz`):
 
 ```
-TELEGRAM_BOT_TOKEN=...          # required
-FIREBASE_DB_URL=...             # when set, the bot persists chat ids to Firebase (tg/{chat_id})
-WEBHOOK_URL=...                 # optional, e.g. https://cloud.tranger.xyz/bot -> webhook mode
-PORT=8000                       # optional webhook listen port
+<BOT_TOKEN_VAR>=...              # required
+<FIREBASE_URL_VAR>=...           # when set, the bot persists chat ids to Firebase (tg/{chat_id})
+<WEBHOOK_URL_VAR>=...            # optional, e.g. https://cloud.tranger.xyz/bot -> webhook mode
+<PORT_VAR>=8000                  # optional webhook listen port
 ```
 
+The precise variable names live in `bot/server.py` (read via `os.getenv`). In
+summary:
+
 - **Polling mode (default):** no public URL needed. The bot long-polls Telegram directly.
-- **Webhook mode:** set `WEBHOOK_URL` to your public HTTPS endpoint; Telegram POSTs
-  updates there. Telegram only requires the URL be HTTPS — there is no separate
+- **Webhook mode:** point the webhook variable at your public HTTPS endpoint; Telegram
+  POSTs updates there. Telegram only requires the URL be HTTPS — there is no separate
   "trusted domain" allowlist in the bot.
 
 ---
