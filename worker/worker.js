@@ -1386,12 +1386,12 @@ async function resolveDestination(data, env, ctx) {
         previous working behavior while adding the new features.
     -------------------------------------------------------- */
 
-    let ownerUid, profile, meta, pubTelegram;
+    let ownerUid, profile, meta, pubTelegram, pubSiteUrl;
 
     try {
 
         // Fire all reads in parallel; missing nodes are tolerated.
-        const [telegramRes, uidRes, profileRes, metaRes] =
+        const [telegramRes, uidRes, profileRes, metaRes, siteUrlRes] =
             await Promise.all([
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/telegram.json", {
@@ -1406,6 +1406,10 @@ async function resolveDestination(data, env, ctx) {
                 Promise.resolve(null),
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/meta.json", {
+                    headers: { "Accept": "application/json" }
+                }),
+
+                fetch(firebaseBase + "/pub/" + tokenKey + "/siteUrl.json", {
                     headers: { "Accept": "application/json" }
                 })
 
@@ -1437,6 +1441,18 @@ async function resolveDestination(data, env, ctx) {
 
         meta = (metaRes.ok ? await metaRes.json() : null);
         if (meta && typeof meta !== "object") meta = null;
+
+        // siteUrl is mirrored on the public token node (writable by the
+        // owner's client SDK) so the unauthenticated worker can read it
+        // without touching the private users/{uid} node.
+        let pubSiteUrlValue = null;
+        if (siteUrlRes && siteUrlRes.ok) {
+            try { pubSiteUrlValue = await siteUrlRes.json(); } catch (_) {}
+        }
+        pubSiteUrl =
+            (pubSiteUrlValue && String(pubSiteUrlValue).trim() !== "")
+                ? String(pubSiteUrlValue).trim()
+                : "";
 
     }
     catch {
@@ -1477,8 +1493,11 @@ async function resolveDestination(data, env, ctx) {
 
     const chatId = telegram;
 
+    // Prefer the public token node (mirrored by the app, readable by the
+    // unauthenticated worker); fall back to the private users/{uid} profile.
     const siteUrl =
-        (profile && profile.siteUrl) ? String(profile.siteUrl).trim() : "";
+        pubSiteUrl ||
+        (profile && profile.siteUrl ? String(profile.siteUrl).trim() : "");
 
     const safeMeta =
         (meta && typeof meta === "object") ? meta : {};

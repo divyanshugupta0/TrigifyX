@@ -514,10 +514,15 @@ function bindUI() {
       await saveProfile(currentUser, p);
       const db = (window.__fb || {}).db;
       if (db && p.accessToken) {
-        // Write the telegram sub-path AND keep uid in sync so the worker can
-        // resolve users/{uid}.siteUrl for origin authentication.
+        // Write the telegram sub-path and keep uid in sync so the worker can
+        // resolve the token. siteUrl is mirrored on the public token node
+        // (if already set) so the worker can validate the submission origin
+        // without reading the private users/{uid} node.
         await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
         await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
+        if (p.siteUrl) {
+          await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), p.siteUrl);
+        }
       }
       renderProfile(p);
       toast("Telegram account linked");
@@ -554,6 +559,13 @@ function bindUI() {
       const p = await getProfile(currentUser);
       p.siteUrl = origin;
       await saveProfile(currentUser, p);
+      // Mirror the origin onto the public token node so the worker can
+      // validate the submission origin without reading the private
+      // users/{uid} node (which is locked to the owner's auth).
+      const db = (window.__fb || {}).db;
+      if (db && p.accessToken) {
+        await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), origin);
+      }
       renderProfile(p);
       toast("Website saved");
     });
