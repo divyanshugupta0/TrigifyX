@@ -1,70 +1,213 @@
 # TrigifyX
 
 Connect any HTML form on any website to your Telegram account via **@TrigifyXbot**.
-Users sign up, generate an API key, link their Telegram, and paste one script tag.
-Every form submission is delivered to their Telegram instantly.
+Users sign up, get an **access token**, link their Telegram chat id, drop one script
+tag on their site, and every form submission is delivered to their Telegram instantly.
 
-## Architecture — 100% frontend (no backend server)
+TrigifyX is built around a **zero-secret frontend + secure Cloudflare Worker** model:
+the browser never sees the Telegram bot token, and form data is forwarded by a Worker
+that resolves the destination server-side.
 
-- **Static site** (`public/`) — served from Netlify (or any static host). Auth + user
-  data via **Firebase Realtime Database web SDK**.
-- **Capture script** (`public/js/trigifyx-capture.js`) — embedded on users' sites. On
-  form submit it **posts straight to the Telegram Bot API** from the browser using the
-  bot token injected from deploy env vars. **No backend required.**
-- **Telegram bot** (`bot/server.py`, optional) — a 24/7 Python bot that answers
-  `/start`, `/myid`, `/help` so users can discover their chat id. It is NOT needed for
-  submission delivery; it only helps users.
+---
 
-### Why no backend?
-The bot token is a public token (anyone can get it from @BotFather). For a personal/
-self-use bot it is safe to use it client-side. Submissions go directly:
-`browser → api.telegram.org → user's Telegram`. Nothing is stored on a server.
+## Architecture
+
+```
+User's website
+  └─ <script src="trigifyx-capture.js">  (embedded snippet)
+        └─ POST /api/submit  ──►  Cloudflare Worker (trigifyx-worker)
+                                      │  resolves accessToken → pub/{token}/telegram
+                                      │  validates origin (siteUrl) → security checks
+                                      └─► Telegram Bot API  ──►  Owner's Telegram
+```
+
+### Components
+
+| Piece | Location | Role |
+|-------|----------|------|
+| **Static site / dashboard** | `public/` | Signup, Telegram link, site setup, install snippet, live stats. Auth + data via **Firebase Realtime Database** web SDK. |
+| **Capture script** | `public/js/trigifyx-capture.js` (served by the Worker at `/trigifyx-capture.js`) | Scans for `<form>`s, serializes fields on submit, and `POST`s to the Worker (not directly to Telegram). Offline queue + retry. |
+| **Cloudflare Worker** | `worker/worker.js` | The secure backend. Resolves the chat id from Firebase, validates the request origin, applies exposure/block rules, and sends to Telegram using the **server-side bot token**. |
+| **Telegram bot** | `bot/server.py` | Optional 24/7 Python helper that answers `/start`, `/myid`, `/help` and persists the user's chat id to Firebase. |
+
+### Why this design (no bot token in the browser)
+The capture script only ever sends `accessToken + fields + page` to the Worker. The
+Worker holds `TELEGRAM_BOT_TOKEN` as a Cloudflare secret and is the only thing that
+talks to `api.telegram.org`. The Telegram destination (chat id) is resolved
+**server-side** from `pub/{token}/telegram`, never embedded in the page source.
+
+---
+
+## Security system
+
+The Worker enforces several layers of protection so a leaked access token cannot be
+abused to spam the owner or other users.
+
+### 1. Access token (not an API key) in the snippet
+The install snippet embeds a random 72-hex **`accessToken`** generated client-side
+(`accessToken()` in `app.js`). It maps to the owner's chat id via
+`pub/{token}/telegram`. The token is unguessable and can be **regenerated** from the
+dashboard, which instantly invalidates the old one.
+
+### 2. Server-side origin validation (anti-exposure)
+Each token can have a registered **`siteUrl`** (origin only, e.g.
+`https://yoursite.com`). On every submission the Worker compares the request origin
+against it. A submission from an **unrecognized origin** is treated as token exposure:
+
+- The form data is **never forwarded** to Telegram.
+- The owner gets a **security-alert** Telegram message.
+- An `exposedChances` counter is incremented (`pub/{token}/meta`).
+- After **3** exposure attempts the token is **auto-blocked** (`blocked: true`) and all
+  further submissions are rejected with `403`.
+
+A matching origin (exact or a real subdomain of the registered host) is a legitimate
+submission and is delivered normally — it does **not** bump the exposure counter.
+
+### 3. Token blocking & regeneration
+- A blocked token returns `403 "Access token blocked"` and delivers nothing.
+- **Regenerate** in the dashboard creates a new token, writes the new `pub/{token}`
+  nodes, sets the old token `blocked: true` (and clears its `telegram`/`uid`/`siteUrl`),
+  and resets `exposedChances`/`blocked` on the profile. The old snippet stops working.
+
+### 4. Server-side idempotency & de-duplication
+The Worker claims a short-lived (15s) lock keyed by
+`token + page + fields` **before** sending, so concurrent or rapidly-retried identical
+submissions are delivered to Telegram **only once**. Successful deliveries are also
+cached (per-hash) to suppress repeats.
+
+### 5. Caching & rate guards
+- Invalid tokens are cached as "not linked" for 60s to avoid hammering Firebase.
+- Request body is capped at 50 KB; fields capped at 100; field values at 5000 chars.
+- Telegram send has a 5s timeout with `AbortController`.
+
+### 6. Firebase rules (deployer responsibility)
+The Worker talks to Firebase over the **unauthenticated REST API**, so rules must allow
+the Worker's reads/writes. Reference rules:
+
+```json
+{
+  "rules": {
+    "pub": {
+      "$token": {
+        "telegram": { ".read": true,  ".write": "auth != null" },
+        "uid":      { ".read": true,  ".write": "auth != null" },
+        "siteUrl":  { ".read": true,  ".write": "auth != null" },
+        "meta":     { ".read": true,  ".write": true },
+        "exposed":  { ".read": true,  ".write": true }
+      }
+    },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+        "siteUrl": { ".read": true, ".write": "auth != null && auth.uid == $uid" }
+      }
+    }
+  }
+}
+```
+
+> The worker-written bookkeeping (submission count, last submission, exposure, blocked)
+> lives in **`pub/{token}/meta`** (`.write: true`) because the Worker cannot write
+> `users/{uid}` (rules restrict it to the owner). The dashboard reads `pub/{token}/meta`
+> to show those stats.
+
+---
 
 ## Configuration
 
 ### Firebase (frontend)
 The site reads `window.__ENV__.firebase` from `public/js/firebase-init.js` (your real
-config is hardcoded there) and `public/js/config.js` (gitignored, optional override).
-If Firebase isn't reachable it runs in **demo mode** (localStorage) so the UI works.
+config is set there). If Firebase isn't reachable it falls back to **demo mode**
+(localStorage) so the UI still works.
 
-### Bot token (injected, never committed)
-`public/js/env-injected.js` (gitignored) sets `window.__ENV__.botToken`. Populate it
-from your deploy env var `TELEGRAM_BOT_TOKEN`:
-- **Netlify:** Site settings → Environment variables → `TELEGRAM_BOT_TOKEN`, then use
-  **Snippet injection** (post-processing) to insert
-  `window.__ENV__.botToken = "..."` — or paste it into `env-injected.js` for local testing.
-- The dashboard reads this token and embeds it into the generated snippet as
-  `window.TRIGIFYX.token`.
+### Cloudflare Worker secrets / vars
+Set these in the `trigifyx-worker` environment (wrangler / Cloudflare dashboard):
+
+| Name | Type | Purpose |
+|------|------|---------|
+| `TELEGRAM_BOT_TOKEN` | **Secret** | Server-side Telegram delivery. Never exposed to the browser. |
+| `FIREBASE_DB_URL` | Variable | RTDB base URL, e.g. `https://trigifyx-default-rtdb.asia-southeast1.firebasedatabase.app`. |
+| `ALLOWED_ORIGINS` | Variable (optional) | CORS allowlist for `/api/submit` (defaults to `*`). |
 
 ### Telegram bot (optional helper)
-1. @BotFather → create bot → copy token → set as `TELEGRAM_BOT_TOKEN`.
-2. Deploy `bot/server.py` (Python) 24/7 so users can `/start` to get their chat id.
-3. Users send `/start` to @TrigifyXbot, copy the numeric chat id, and paste it into the
-   site as their Telegram destination.
+Set on the host that runs `bot/server.py` (e.g. `cloud.tranger.xyz`):
+
+```
+TELEGRAM_BOT_TOKEN=...          # required
+FIREBASE_DB_URL=...             # when set, the bot persists chat ids to Firebase (tg/{chat_id})
+WEBHOOK_URL=...                 # optional, e.g. https://cloud.tranger.xyz/bot -> webhook mode
+PORT=8000                       # optional webhook listen port
+```
+
+- **Polling mode (default):** no public URL needed. The bot long-polls Telegram directly.
+- **Webhook mode:** set `WEBHOOK_URL` to your public HTTPS endpoint; Telegram POSTs
+  updates there. Telegram only requires the URL be HTTPS — there is no separate
+  "trusted domain" allowlist in the bot.
+
+---
 
 ## Deploy
 
-**Netlify (frontend only):**
+### Cloudflare Worker (required backend)
 ```
-netlify deploy --prod
+cd worker
+wrangler deploy          # deploys trigifyx-worker
 ```
-`netlify.toml` publishes `public/`. That's the whole site — no functions, no server.
+Endpoints: `GET /`, `GET /health`, `GET /trigifyx-capture.js`,
+`POST /api/submit`, `POST /test-message`.
 
-**Python bot (optional, separate host):**
+### Static site (dashboard)
+Serve `public/` from any static host (Netlify, Vercel, or `cloud.tranger.xyz`).
+`netlify deploy --prod` (or your host's equivalent). `netlify.toml` publishes `public/`.
+
+### Telegram bot (optional, separate host)
 ```
 cd bot && pip install -r requirements.txt && python server.py
 ```
-Set `TELEGRAM_BOT_TOKEN` (and `WEBHOOK_URL` for webhook mode) on that host.
 
-## Local dev
-```
-# Serve the static site (any static server works)
-npx serve public        # or: python -m http.server 8080 --directory public
-```
-For local testing, put your token in `public/js/env-injected.js`.
+---
 
 ## How the embeddable script works
-`public/js/trigifyx-capture.js` scans for `<form>` elements, serializes fields on submit,
-and calls `https://api.telegram.org/bot<token>/sendMessage` directly (plain text).
-Submissions are queued in `localStorage` and retried with backoff, so a transient
-network failure does not lose data.
+
+1. The dashboard generates a snippet:
+   ```html
+   <script>
+     window.TRIGIFYX = { accessToken: "<token>", endpoint: "https://trigifyx-worker.xxx.workers.dev" };
+   </script>
+   <script src="https://trigifyx-worker.xxx.workers.dev/trigifyx-capture.js" defer></script>
+   ```
+2. `trigifyx-capture.js` scans for `<form>`s (including dynamically added ones via
+   `MutationObserver`), serializes non-password fields on submit, and `POST`s
+   `{ accessToken, fields, page }` to `/api/submit`.
+3. The Worker resolves the chat id, validates the origin, and forwards the message to
+   Telegram. Submissions are queued in `localStorage` and retried with exponential
+   backoff, so a transient failure does not lose data.
+
+## Dashboard stats
+
+The live dashboard shows (read from `pub/{token}/meta`):
+- **Submission count** (`submissionCount`)
+- **Last submission** time + page (`lastSubmissionAt`, `lastSubmissionPage`)
+- **Exposure** `exposedChances / 3` and blocked state
+- **Access token** (with Copy + Regenerate)
+
+---
+
+## Project layout
+
+```
+public/                Static site + dashboard (Firebase web SDK)
+  index.html           Dashboard / setup UI
+  js/app.js            Auth, profile, token regen, snippet, stats
+  js/firebase-init.js  Firebase config
+  js/trigifyx-capture.js  Embeddable capture script (also served by the Worker)
+worker/                Cloudflare Worker (secure backend)
+  worker.js            fetch handler, resolveDestination, security rules
+  wrangler.toml        Worker config
+bot/                   Optional Telegram helper bot (Python)
+  server.py            /start, /myid, /help + Firebase chat-id persistence
+```
+
+> Note: `old*` files in the repo are previous reference copies and are gitignored —
+> they must never be committed or deployed.
