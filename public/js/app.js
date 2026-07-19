@@ -23,8 +23,7 @@ import {
   ref,
   set,
   get,
-  update,
-  remove
+  update
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const ENV = window.__ENV__ || {};
@@ -658,10 +657,16 @@ function bindUI() {
             exposedChances: 0
           });
         } catch (_) {}
-        // Roll over: remove the old token's public node so it can no
-        // longer be used to deliver submissions.
+        // Roll over: invalidate the old token's public node so it can no
+        // longer be used to deliver submissions. We clear the identifying
+        // children (telegram/uid) rather than removing the parent node,
+        // because the Firebase rules only grant write on those children
+        // (not on pub/$token itself), so a parent remove would be denied.
         if (oldToken && oldToken !== newToken) {
-          try { await remove(ref(db, "pub/" + oldToken)); } catch (_) {}
+          try {
+            await set(ref(db, "pub/" + oldToken + "/telegram"), null);
+            await set(ref(db, "pub/" + oldToken + "/uid"), null);
+          } catch (_) {}
         }
       }
 
