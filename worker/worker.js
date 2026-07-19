@@ -1570,82 +1570,88 @@ async function resolveDestination(data, env, ctx) {
 
         siteOk = originsMatch(requestOrigin, siteUrl);
 
-        // Unauthorized practice / token exposure detected.
-        // Do NOT forward form data. Notify the token OWNER and
-        // bump the exposed-chance counter (max 3 -> block).
-        const chances =
-            (typeof safeMeta.exposedChances === "number")
-                ? safeMeta.exposedChances
-                : 0;
+        // Only treat as exposure when the origin does NOT match the
+        // registered site. A matching origin is a legitimate submission.
+        if (!siteOk) {
 
-        const newChances = chances + 1;
-        const nowBlocked = newChances >= MAX_EXPOSED_CHANCES;
+            // Unauthorized practice / token exposure detected.
+            // Do NOT forward form data. Notify the token OWNER and
+            // bump the exposed-chance counter (max 3 -> block).
+            const chances =
+                (typeof safeMeta.exposedChances === "number")
+                    ? safeMeta.exposedChances
+                    : 0;
 
-        const patch = {
-            meta: Object.assign({}, safeMeta, {
-                exposedChances: newChances,
-                lastExposureAt: Date.now(),
-                blocked: nowBlocked
-            })
-        };
+            const newChances = chances + 1;
+            const nowBlocked = newChances >= MAX_EXPOSED_CHANCES;
 
-        ctx.waitUntil(
-            firebasePatch(firebaseBase, "pub/" + tokenKey, patch)
-        );
+            const patch = {
+                meta: Object.assign({}, safeMeta, {
+                    exposedChances: newChances,
+                    lastExposureAt: Date.now(),
+                    blocked: nowBlocked
+                })
+            };
 
-        if (ownerUid) {
             ctx.waitUntil(
-                firebasePatch(
-                    firebaseBase,
-                    "users/" + encodeURIComponent(ownerUid),
-                    {
-                        exposedChances: newChances,
-                        blocked: nowBlocked
-                    }
-                )
+                firebasePatch(firebaseBase, "pub/" + tokenKey, patch)
             );
-        }
 
-        if (nowBlocked) {
+            if (ownerUid) {
+                ctx.waitUntil(
+                    firebasePatch(
+                        firebaseBase,
+                        "users/" + encodeURIComponent(ownerUid),
+                        {
+                            exposedChances: newChances,
+                            blocked: nowBlocked
+                        }
+                    )
+                );
+            }
 
-            await notifyOwner(
-                chatId,
-                "🚫 <b>Your TrigifyX access token has been BLOCKED</b>\n\n" +
-                "Reason: Unauthorized practices / access token exposed.\n\n" +
-                "A form submission was received from an unrecognized origin " +
-                "(<code>" + escapeHTML(requestOrigin) + "</code>) " +
-                MAX_EXPOSED_CHANCES + " times. For your security this token " +
-                "will no longer forward any submissions.\n\n" +
-                "Please regenerate your API key from your dashboard to get a " +
-                "new token.",
+            if (nowBlocked) {
+
+                await notifyOwner(
+                    chatId,
+                    "🚫 <b>Your TrigifyX access token has been BLOCKED</b>\n\n" +
+                    "Reason: Unauthorized practices / access token exposed.\n\n" +
+                    "A form submission was received from an unrecognized origin " +
+                    "(<code>" + escapeHTML(requestOrigin) + "</code>) " +
+                    MAX_EXPOSED_CHANCES + " times. For your security this token " +
+                    "will no longer forward any submissions.\n\n" +
+                    "Please regenerate your API key from your dashboard to get a " +
+                    "new token.",
+                    env
+                );
+
+            } else {
+
+                await notifyOwner(
+                    chatId,
+                    "⚠️ <b>Security alert</b>\n\n" +
+                    "A form submission was received from an unrecognized origin " +
+                    "(<code>" + escapeHTML(requestOrigin) + "</code>) that does " +
+                    "not match your connected site.\n\n" +
+                    "Your token was NOT used to send form data. Exposure attempt " +
+                    newChances + " of " + MAX_EXPOSED_CHANCES + ". After " +
+                    MAX_EXPOSED_CHANCES + " attempts your token will be blocked.",
+                    env
+                );
+
+            }
+
+            return json(
+                {
+                    ok: false,
+                    error: "Invalid credentials",
+                    code: "SITE_MISMATCH"
+                },
+                403,
                 env
             );
 
-        } else {
-
-            await notifyOwner(
-                chatId,
-                "⚠️ <b>Security alert</b>\n\n" +
-                "A form submission was received from an unrecognized origin " +
-                "(<code>" + escapeHTML(requestOrigin) + "</code>) that does " +
-                "not match your connected site.\n\n" +
-                "Your token was NOT used to send form data. Exposure attempt " +
-                newChances + " of " + MAX_EXPOSED_CHANCES + ". After " +
-                MAX_EXPOSED_CHANCES + " attempts your token will be blocked.",
-                env
-            );
-
         }
-
-        return json(
-            {
-                ok: false,
-                error: "Invalid credentials",
-                code: "SITE_MISMATCH"
-            },
-            403,
-            env
-        );
 
     }
 
