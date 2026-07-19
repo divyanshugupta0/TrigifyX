@@ -23,7 +23,8 @@ import {
   ref,
   set,
   get,
-  update
+  update,
+  remove
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const ENV = window.__ENV__ || {};
@@ -240,7 +241,7 @@ function renderProfile(p) {
   $("#disp-name").textContent = p.name || "—";
   $("#disp-email").textContent = p.email;
   $("#disp-tg").textContent = p.telegram || "—";
-  $("#disp-apikey").textContent = p.apiKey;
+  $("#disp-apikey").textContent = p.accessToken || "—";
   $("#disp-plan").textContent = p.plan || "free";
   $("#disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
 
@@ -250,16 +251,10 @@ function renderProfile(p) {
   $("#top-uid").textContent = p.name || p.email || "";
   $("#profile-dropdown-email").textContent = p.email || "—";
 
-  // API key reveal state now lives on the profile itself (persisted to
-  // Firebase / localStorage), so once a user issues it, it stays revealed
-  // on every future visit instead of re-locking on reload.
-  const issued = !!p.apiKeyIssued;
-  $("#apikey-locked").classList.toggle("hide", issued);
-  $("#apikey-revealed").classList.toggle("hide", !issued);
-  // The Issue API Key block is only needed before the key is first issued.
-  // Once setup is finished it stays hidden permanently.
-  const showIssue = !issued && !p.setupComplete;
-  $("#issue-key").classList.toggle("hide", !showIssue);
+  // The access token is always shown once the user exists (no separate
+  // "issue" step is needed in the UI). Keep apiKeyIssued for setup gating
+  // but the API-key reveal/issue UI is now hidden.
+  $("#apikey-revealed").classList.remove("hide");
 
   // Telegram card always shows the instructions + chat id input.
   // (No separate "linked" state — the chat id is editable any time.)
@@ -285,7 +280,7 @@ function renderProfile(p) {
   if (setupDone) {
     $("#acct-site").textContent = p.siteUrl;
     $("#acct-tg").textContent = p.telegram;
-    $("#acct-apikey").textContent = "••••••••" + (p.apiKey ? p.apiKey.slice(-4) : "");
+    $("#acct-apikey").textContent = p.accessToken || "—";
   }
 
   // Toggle between the setup flow and the live dashboard.
@@ -551,17 +546,21 @@ function bindUI() {
     });
   };
 
-  // Reveal the API key + install snippet, and PERSIST that choice so it
-  // never has to be re-issued or re-shown on a future visit.
-  $("#issue-key").onclick = async () => {
-    await withLoading($("#issue-key"), "Issuing…", async () => {
-      const p = currentProfile() || (await getProfile(currentUser));
-      p.apiKeyIssued = true;
-      await saveProfile(currentUser, p);
-      renderProfile(p);
-      toast("API key issued");
-    });
-  };
+  // The issue-key button is no longer shown in the UI; the access token is
+  // revealed automatically. Keep the handler only as a no-op guard so a
+  // missing element can never throw during binding.
+  const issueBtn = $("#issue-key");
+  if (issueBtn) {
+    issueBtn.onclick = async () => {
+      await withLoading(issueBtn, "Issuing…", async () => {
+        const p = currentProfile() || (await getProfile(currentUser));
+        p.apiKeyIssued = true;
+        await saveProfile(currentUser, p);
+        renderProfile(p);
+        toast("API key issued");
+      });
+    };
+  }
 
   // Save the user's website URL and persist it to Firebase / localStorage
   // so the field arrives already filled in on the next visit.
@@ -648,15 +647,34 @@ function bindUI() {
 
   $("#regen").onclick = async () => {
     const ok = confirm(
-      "Regenerating your API key will break any install snippet already live on a site until you update it there too. Continue?"
+      "Regenerating your access token will break any install snippet already live on a site until you update it there too. Continue?"
     );
     if (!ok) return;
     await withLoading($("#regen"), "Regenerating…", async () => {
       const p = await getProfile(currentUser);
-      p.apiKey = apiKey();
+      const oldToken = p.accessToken;
+      const newToken = accessToken();
+      p.accessToken = newToken;
+      // apiKey is preserved for future use.
       await saveProfile(currentUser, p);
+
+      const db = (window.__fb || {}).db;
+      if (db) {
+        // Write the new public token node.
+        await set(ref(db, "pub/" + newToken + "/telegram"), p.telegram || "");
+        await set(ref(db, "pub/" + newToken + "/uid"), p.uid);
+        if (p.siteUrl) {
+          await set(ref(db, "pub/" + newToken + "/siteUrl"), p.siteUrl);
+        }
+        // Roll over: remove the old token's public node so it can no
+        // longer be used to deliver submissions.
+        if (oldToken && oldToken !== newToken) {
+          try { await remove(ref(db, "pub/" + oldToken)); } catch (_) {}
+        }
+      }
+
       renderProfile(p);
-      toast("New API key generated");
+      toast("New access token generated — update your install snippet");
     });
   };
 }
@@ -690,7 +708,7 @@ async function onLogin(u) {
   if (!p) {
     p = {
       uid: u.uid, email: u.email, apiKey: apiKey(), telegram: "",
-      createdAt: Date.now(), plan: "free", apiKeyIssued: false, siteUrl: ""
+      createdAt: Date.now(), plan: "free", apiKeyIssued: true, siteUrl: ""
     };
     await saveProfile(u, p);
   }
@@ -699,7 +717,9 @@ async function onLogin(u) {
   // users never get asked to redo something they already set up.
   let needsSave = false;
   if (!p.accessToken) { p.accessToken = accessToken(); needsSave = true; }
-  if (typeof p.apiKeyIssued === "undefined") { p.apiKeyIssued = false; needsSave = true; }
+  // The access token is revealed automatically now (no issue button), so
+  // mark it issued to reveal the install snippet. Kept for setup gating.
+  if (!p.apiKeyIssued) { p.apiKeyIssued = true; needsSave = true; }
   if (typeof p.siteUrl === "undefined") { p.siteUrl = ""; needsSave = true; }
   if (typeof p.testMessageCount === "undefined") { p.testMessageCount = 0; needsSave = true; }
   if (typeof p.setupComplete === "undefined") { p.setupComplete = false; needsSave = true; }

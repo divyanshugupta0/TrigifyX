@@ -312,38 +312,33 @@
                                     <span class="v" id="acct-tg">—</span>
                                 </div>
                                 <div class="kv">
-                                    <span class="k">API Key</span>
+                                    <span class="k">Access Token</span>
                                     <span class="v mono" id="acct-apikey">—</span>
                                 </div>
                             </div>
                         </div>
 
-                    <div class="card">
-                        <h2>API Key</h2>
-                        <p class="lead">
-                            Your API key is generated and stored securely. Reveal it only
-                            when you are ready to connect a site.
-                        </p>
+                        <div class="card">
+                            <h2>Access Token</h2>
+                            <p class="lead">
+                                This token is embedded in your install snippet and identifies
+                                your Telegram destination. Keep it private.
+                            </p>
 
-                        <div id="apikey-locked" class="note">
-                            Your API key is hidden. Click <strong>Issue API Key</strong>
-                            to reveal it and generate your install snippet.
-                        </div>
-
-                        <div id="apikey-revealed" class="hide">
-                            <div class="api-box">
-                                <code id="disp-apikey">—</code>
+                            <div id="apikey-revealed">
+                                <div class="api-box">
+                                    <code id="disp-apikey">—</code>
+                                </div>
+                                <div class="row mt">
+                                    <button class="btn ghost" id="copy-key">Copy</button>
+                                    <button class="btn" id="regen">Regenerate</button>
+                                </div>
                             </div>
+
                             <div class="row mt">
-                                <button class="btn ghost" id="copy-key">Copy</button>
-                                <button class="btn" id="regen">Regenerate</button>
+                                <button class="btn" id="issue-key" class="hide">Issue API Key</button>
                             </div>
                         </div>
-
-                        <div class="row mt">
-                            <button class="btn" id="issue-key">Issue API Key</button>
-                        </div>
-                    </div>
 
                 </aside>
 
