@@ -251,10 +251,11 @@ function renderProfile(p) {
   $("#top-uid").textContent = p.name || p.email || "";
   $("#profile-dropdown-email").textContent = p.email || "—";
 
-  // The access token is always shown once the user exists (no separate
-  // "issue" step is needed in the UI). Keep apiKeyIssued for setup gating
-  // but the API-key reveal/issue UI is now hidden.
-  $("#apikey-revealed").classList.remove("hide");
+  // Reveal the access-token card only once a token actually exists. Until
+  // then (e.g. profile not yet finalized) there is nothing to copy or
+  // regenerate, so the Regenerate button is logically hidden too.
+  const hasToken = !!(p.accessToken && p.accessToken.trim());
+  $("#apikey-revealed").classList.toggle("hide", !hasToken);
 
   // Telegram card always shows the instructions + chat id input.
   // (No separate "linked" state — the chat id is editable any time.)
@@ -546,22 +547,6 @@ function bindUI() {
     });
   };
 
-  // The issue-key button is no longer shown in the UI; the access token is
-  // revealed automatically. Keep the handler only as a no-op guard so a
-  // missing element can never throw during binding.
-  const issueBtn = $("#issue-key");
-  if (issueBtn) {
-    issueBtn.onclick = async () => {
-      await withLoading(issueBtn, "Issuing…", async () => {
-        const p = currentProfile() || (await getProfile(currentUser));
-        p.apiKeyIssued = true;
-        await saveProfile(currentUser, p);
-        renderProfile(p);
-        toast("API key issued");
-      });
-    };
-  }
-
   // Save the user's website URL and persist it to Firebase / localStorage
   // so the field arrives already filled in on the next visit.
   $("#site-save").onclick = async () => {
@@ -666,12 +651,24 @@ function bindUI() {
         if (p.siteUrl) {
           await set(ref(db, "pub/" + newToken + "/siteUrl"), p.siteUrl);
         }
+        // Fresh token starts unblocked with no exposure history.
+        try {
+          await set(ref(db, "pub/" + newToken + "/meta"), {
+            blocked: false,
+            exposedChances: 0
+          });
+        } catch (_) {}
         // Roll over: remove the old token's public node so it can no
         // longer be used to deliver submissions.
         if (oldToken && oldToken !== newToken) {
           try { await remove(ref(db, "pub/" + oldToken)); } catch (_) {}
         }
       }
+
+      // Regenerating the token clears any previous blocked/exposed state.
+      p.blocked = false;
+      p.exposedChances = 0;
+      await saveProfile(currentUser, p);
 
       renderProfile(p);
       toast("New access token generated — update your install snippet");
