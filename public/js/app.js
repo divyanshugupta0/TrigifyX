@@ -514,8 +514,10 @@ function bindUI() {
       await saveProfile(currentUser, p);
       const db = (window.__fb || {}).db;
       if (db && p.accessToken) {
-        // Write only the telegram sub-path (kept separate from other pub data).
+        // Write the telegram sub-path AND keep uid in sync so the worker can
+        // resolve users/{uid}.siteUrl for origin authentication.
         await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
+        await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
       }
       renderProfile(p);
       toast("Telegram account linked");
