@@ -263,9 +263,9 @@ function renderProfile(p) {
   $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
   $("#tg-input").value = p.telegram || "";
 
-  // Install snippet shows once the key has ever been issued — persisted,
+  // Install snippet shows once the token has been issued — persisted,
   // so it doesn't hide itself again on the next visit.
-  $("#install-card").classList.toggle("hide", !issued || p.setupComplete);
+  $("#install-card").classList.toggle("hide", !p.apiKeyIssued || p.setupComplete);
 
   // Pre-fill the saved website URL so it's never asked for twice.
   $("#site-url").value = p.siteUrl || "";
