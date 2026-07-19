@@ -1371,40 +1371,39 @@ async function resolveDestination(data, env, ctx) {
         caches.default;
 
     /* --------------------------------------------------------
-       FLOW: accessToken -> uid -> user profile -> auth -> fulfill
-       1. pub/{token}/uid      -> owner uid
-       2. users/{uid}          -> siteUrl, telegram, apiKey
-       3. pub/{token}/meta     -> blocked, exposedChances, counts
+        FLOW (additive, backwards-compatible):
+
+        PRIMARY (old working path):
+          pub/{token}/telegram.json  -> chatId  (written by the app)
+
+        NEW (additive security layer):
+          pub/{token}/uid   -> owner uid
+          users/{uid}       -> siteUrl, telegram, apiKey, blocked
+          pub/{token}/meta  -> blocked, exposedChances, counts
+
+        The chatId is taken from whichever source has it
+        (pub/{token}/telegram OR profile.telegram). This keeps the
+        previous working behavior while adding the new features.
     -------------------------------------------------------- */
 
-    let ownerUid, profile, meta;
+    let ownerUid, profile, meta, pubTelegram;
 
     try {
 
-        const uidRes =
-            await fetch(firebaseBase + "/pub/" + tokenKey + "/uid.json", {
-                headers: { "Accept": "application/json" }
-            });
-
-        if (!uidRes.ok) throw new Error("uid_" + uidRes.status);
-        ownerUid = await uidRes.json();
-
-        if (!ownerUid || String(ownerUid).trim() === "") {
-            return json(
-                { ok: false, error: "Access token not linked" },
-                404,
-                env
-            );
-        }
-
-        const uid = String(ownerUid).trim();
-
-        const [profileRes, metaRes] =
+        // Fire all reads in parallel; missing nodes are tolerated.
+        const [telegramRes, uidRes, profileRes, metaRes] =
             await Promise.all([
 
-                fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+                fetch(firebaseBase + "/pub/" + tokenKey + "/telegram.json", {
                     headers: { "Accept": "application/json" }
                 }),
+
+                fetch(firebaseBase + "/pub/" + tokenKey + "/uid.json", {
+                    headers: { "Accept": "application/json" }
+                }),
+
+                // profile fetch is conditional on uid, so prime lazily below
+                Promise.resolve(null),
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/meta.json", {
                     headers: { "Accept": "application/json" }
@@ -1412,18 +1411,31 @@ async function resolveDestination(data, env, ctx) {
 
             ]);
 
-        if (!profileRes.ok) throw new Error("profile_" + profileRes.status);
-        profile = await profileRes.json();
+        const telegramValue = telegramRes.ok ? await telegramRes.json() : null;
+        pubTelegram =
+            (telegramValue && String(telegramValue).trim() !== "")
+                ? String(telegramValue).trim()
+                : "";
 
-        if (!profile) {
-            return json(
-                { ok: false, error: "Access token not linked" },
-                404,
-                env
-            );
+        // Resolve owner profile only if a uid node exists.
+        let uid = "";
+        if (uidRes.ok) {
+            const uidValue = await uidRes.json();
+            if (uidValue && String(uidValue).trim() !== "") {
+                uid = String(uidValue).trim();
+            }
         }
 
-        meta = metaRes.ok ? await metaRes.json() : null;
+        if (uid) {
+            const pres =
+                await fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+                    headers: { "Accept": "application/json" }
+                });
+            if (pres.ok) profile = await pres.json();
+            ownerUid = uid;
+        }
+
+        meta = (metaRes.ok ? await metaRes.json() : null);
         if (meta && typeof meta !== "object") meta = null;
 
     }
@@ -1442,8 +1454,11 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    const telegram =
-        profile.telegram ? String(profile.telegram).trim() : "";
+    // chatId: prefer the old direct node, fall back to profile.telegram.
+    let telegram = pubTelegram;
+    if (!telegram && profile && profile.telegram) {
+        telegram = String(profile.telegram).trim();
+    }
 
     if (!telegram) {
 
@@ -1463,7 +1478,7 @@ async function resolveDestination(data, env, ctx) {
     const chatId = telegram;
 
     const siteUrl =
-        profile.siteUrl ? String(profile.siteUrl).trim() : "";
+        (profile && profile.siteUrl) ? String(profile.siteUrl).trim() : "";
 
     const safeMeta =
         (meta && typeof meta === "object") ? meta : {};

@@ -17,3 +17,8 @@ bot/
 .wrangler/
 worker/.wrangler/
 
+
+# Never commit previous/reference copies
+old*
+**/old*
+
