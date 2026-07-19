@@ -659,13 +659,15 @@ function bindUI() {
         } catch (_) {}
         // Roll over: invalidate the old token's public node so it can no
         // longer be used to deliver submissions. We clear the identifying
-        // children (telegram/uid) rather than removing the parent node,
-        // because the Firebase rules only grant write on those children
-        // (not on pub/$token itself), so a parent remove would be denied.
+        // children (telegram/uid/siteUrl) rather than removing the parent
+        // node, because the Firebase rules only grant write on those
+        // children (not on pub/$token itself), so a parent remove would be
+        // denied.
         if (oldToken && oldToken !== newToken) {
           try {
             await set(ref(db, "pub/" + oldToken + "/telegram"), null);
             await set(ref(db, "pub/" + oldToken + "/uid"), null);
+            await set(ref(db, "pub/" + oldToken + "/siteUrl"), null);
           } catch (_) {}
         }
       }
