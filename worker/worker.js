@@ -1371,36 +1371,64 @@ async function resolveDestination(data, env, ctx) {
         caches.default;
 
     /* --------------------------------------------------------
-       Lookup the public token node (telegram + uid + meta).
-       We read the whole pub node so we also get uid + meta in one call.
+       FLOW: accessToken -> uid -> user profile -> auth -> fulfill
+       1. pub/{token}/uid      -> owner uid
+       2. users/{uid}          -> siteUrl, telegram, apiKey
+       3. pub/{token}/meta     -> blocked, exposedChances, counts
     -------------------------------------------------------- */
 
-    const firebaseURL =
-        firebaseBase +
-        "/pub/" +
-        tokenKey +
-        ".json";
-
-    let response;
+    let ownerUid, profile, meta;
 
     try {
 
-        response =
-            await fetch(firebaseURL, {
-
-                headers: {
-
-                    "Accept":
-                        "application/json"
-
-                }
-
+        const uidRes =
+            await fetch(firebaseBase + "/pub/" + tokenKey + "/uid.json", {
+                headers: { "Accept": "application/json" }
             });
+
+        if (!uidRes.ok) throw new Error("uid_" + uidRes.status);
+        ownerUid = await uidRes.json();
+
+        if (!ownerUid || String(ownerUid).trim() === "") {
+            return json(
+                { ok: false, error: "Access token not linked" },
+                404,
+                env
+            );
+        }
+
+        const uid = String(ownerUid).trim();
+
+        const [profileRes, metaRes] =
+            await Promise.all([
+
+                fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+                    headers: { "Accept": "application/json" }
+                }),
+
+                fetch(firebaseBase + "/pub/" + tokenKey + "/meta.json", {
+                    headers: { "Accept": "application/json" }
+                })
+
+            ]);
+
+        if (!profileRes.ok) throw new Error("profile_" + profileRes.status);
+        profile = await profileRes.json();
+
+        if (!profile) {
+            return json(
+                { ok: false, error: "Access token not linked" },
+                404,
+                env
+            );
+        }
+
+        meta = metaRes.ok ? await metaRes.json() : null;
+        if (meta && typeof meta !== "object") meta = null;
 
     }
     catch {
 
-        // Issue 10: Cache invalid tokens
         await cacheInvalidToken(data.accessToken, ctx);
 
         return json(
@@ -1414,9 +1442,11 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    if (!response.ok) {
+    const telegram =
+        profile.telegram ? String(profile.telegram).trim() : "";
 
-        // Issue 10: Cache invalid tokens
+    if (!telegram) {
+
         await cacheInvalidToken(data.accessToken, ctx);
 
         return json(
@@ -1430,57 +1460,18 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    let node;
+    const chatId = telegram;
 
-    try {
+    const siteUrl =
+        profile.siteUrl ? String(profile.siteUrl).trim() : "";
 
-        node =
-            await response.json();
-
-    }
-    catch {
-
-        return json(
-            {
-                ok: false,
-                error: "Invalid Firebase response"
-            },
-            500,
-            env
-        );
-
-    }
-
-    if (
-        !node ||
-        !node.telegram ||
-        String(node.telegram).trim() === ""
-    ) {
-
-        // Issue 10: Cache invalid tokens
-        await cacheInvalidToken(data.accessToken, ctx);
-
-        return json(
-            {
-                ok: false,
-                error: "Access token not linked"
-            },
-            404,
-            env
-        );
-
-    }
-
-    const chatId =
-        String(node.telegram).trim();
-
-    const meta =
-        (node.meta && typeof node.meta === "object") ? node.meta : {};
+    const safeMeta =
+        (meta && typeof meta === "object") ? meta : {};
 
     // --------------------------------------------------------
-    // BLOCKED STATE: do not fulfil ANY request for this token.
+    // BLOCKED STATE
     // --------------------------------------------------------
-    if (meta.blocked === true) {
+    if (safeMeta.blocked === true) {
 
         return json(
             {
@@ -1496,56 +1487,29 @@ async function resolveDestination(data, env, ctx) {
 
     // --------------------------------------------------------
     // SITE AUTHENTICATION
-    // The request's origin must match the site the token was
-    // issued for. We resolve the user profile via pub/{token}/uid
-    // then read users/{uid}.siteUrl.
+    // Match the request origin against the registered siteUrl.
+    // If no siteUrl is registered yet, allow the submission.
     // --------------------------------------------------------
     const requestOrigin = safeOrigin(data.page);
+    let siteOk = true;
 
-    let siteOk = false;
-    let ownerUid = node.uid ? String(node.uid) : "";
+    if (requestOrigin && siteUrl) {
 
-    if (requestOrigin && ownerUid) {
-
-        try {
-
-            const profile =
-                await firebaseGet(
-                    firebaseBase,
-                    "users/" + encodeURIComponent(ownerUid)
-                );
-
-            const storedSite =
-                profile && profile.siteUrl
-                    ? String(profile.siteUrl).trim()
-                    : "";
-
-            if (storedSite) {
-                siteOk = originsMatch(requestOrigin, storedSite);
-            }
-
-        }
-        catch (_) {
-            /* fall through to siteOk = false */
-        }
-
-    }
-
-    if (!siteOk && requestOrigin) {
+        siteOk = originsMatch(requestOrigin, siteUrl);
 
         // Unauthorized practice / token exposure detected.
         // Do NOT forward form data. Notify the token OWNER and
         // bump the exposed-chance counter (max 3 -> block).
         const chances =
-            (typeof meta.exposedChances === "number")
-                ? meta.exposedChances
+            (typeof safeMeta.exposedChances === "number")
+                ? safeMeta.exposedChances
                 : 0;
 
         const newChances = chances + 1;
         const nowBlocked = newChances >= MAX_EXPOSED_CHANCES;
 
         const patch = {
-            meta: Object.assign({}, meta, {
+            meta: Object.assign({}, safeMeta, {
                 exposedChances: newChances,
                 lastExposureAt: Date.now(),
                 blocked: nowBlocked
@@ -1657,20 +1621,20 @@ async function resolveDestination(data, env, ctx) {
     -------------------------------------------------------- */
 
     const prevCount =
-        (typeof meta.submissionCount === "number")
-            ? meta.submissionCount
+        (typeof safeMeta.submissionCount === "number")
+            ? safeMeta.submissionCount
             : 0;
 
     const newCount = prevCount + 1;
 
     const metaPatch = {
-        meta: Object.assign({}, meta, {
+        meta: Object.assign({}, safeMeta, {
             submissionCount: newCount,
             lastSubmissionAt: Date.now(),
             lastSubmissionPage: data.page || "Unknown",
             exposedChances:
-                (typeof meta.exposedChances === "number")
-                    ? meta.exposedChances
+                (typeof safeMeta.exposedChances === "number")
+                    ? safeMeta.exposedChances
                     : 0
         })
     };
