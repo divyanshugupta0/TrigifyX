@@ -9,6 +9,7 @@
  *   GET  /health
  *   GET  /trigifyx-capture.js
  *   POST /api/submit
+ *   POST /test-message
  *
  * Required Secrets
  *   TELEGRAM_BOT_TOKEN
@@ -682,6 +683,27 @@ export default {
                         ctx
                     );
 
+                case "/test-message":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleTestMessage(
+                        request,
+                        env,
+                        ctx
+                    );
+
                 default:
 
                     return json(
@@ -886,6 +908,69 @@ function cors(response, env) {
 
     return response;
 
+}
+
+/* ============================================================
+   Handle Test Message (dashboard "Send Test Message")
+============================================================ */
+
+async function handleTestMessage(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { accessToken } = payload || {};
+    if (typeof accessToken !== "string" || accessToken.trim() === "") {
+        return json({ ok: false, error: "Missing accessToken" }, 400, env);
+    }
+
+    const trimmedToken = accessToken.trim();
+    const invalidCheck = await checkInvalidToken(trimmedToken, ctx);
+    if (invalidCheck) return invalidCheck;
+
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    let node;
+    try {
+        const res = await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + ".json", {
+            headers: { "Accept": "application/json" }
+        });
+        if (!res.ok) return json({ ok: false, error: "Access token not linked" }, 404, env);
+        node = await res.json();
+    } catch {
+        return json({ ok: false, error: "Unable to reach Firebase" }, 502, env);
+    }
+
+    if (!node || !node.telegram || String(node.telegram).trim() === "") {
+        return json({ ok: false, error: "Access token not linked" }, 404, env);
+    }
+
+    // Blocked tokens cannot send anything.
+    if (node.meta && node.meta.blocked === true) {
+        return json({ ok: false, error: "Access token blocked", blocked: true }, 403, env);
+    }
+
+    const chatId = String(node.telegram).trim();
+    const result = await sendTelegram(
+        chatId,
+        { test: "This is a test message from TrigifyX ✅" },
+        "TrigifyX Dashboard",
+        env
+    );
+
+    return result;
 }
 
 /* ============================================================
@@ -1210,6 +1295,51 @@ async function cacheInvalidToken(token, ctx) {
    Resolve Destination (Firebase)
 ============================================================ */
 
+// Firebase REST helpers (public RTDB, no auth header needed when rules allow).
+function firebaseNodeURL(base, path) {
+    return base.replace(/\/$/, "") + "/" + path + ".json";
+}
+
+async function firebaseGet(base, path) {
+    const res = await fetch(firebaseNodeURL(base, path), {
+        headers: { "Accept": "application/json" }
+    });
+    if (!res.ok) throw new Error("fb_get_" + res.status);
+    return res.json();
+}
+
+async function firebasePatch(base, path, patch) {
+    return fetch(firebaseNodeURL(base, path), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch)
+    });
+}
+
+// Notify the owner of a token about an event (block, exposure, etc.)
+// without ever forwarding the attacker's form data.
+async function notifyOwner(chatId, text, env) {
+    const botToken = getEnv(env, "TELEGRAM_BOT_TOKEN");
+    if (!botToken || !chatId) return;
+    try {
+        await fetch(
+            `https://api.telegram.org/bot${botToken}/sendMessage`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: text,
+                    parse_mode: "HTML",
+                    disable_web_page_preview: true
+                })
+            }
+        );
+    } catch (_) { /* best-effort */ }
+}
+
+const MAX_EXPOSED_CHANCES = 3;
+
 async function resolveDestination(data, env, ctx) {
 
     const firebaseBase =
@@ -1231,51 +1361,25 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    const cacheKey =
-        "https://cache.trigifyx/" +
+    const tokenKey =
         encodeURIComponent(data.accessToken);
+
+    const cacheKey =
+        "https://cache.trigifyx/" + tokenKey;
 
     const cache =
         caches.default;
 
     /* --------------------------------------------------------
-       Check Cloudflare Cache - Fix Request object usage (Issue 6)
-    -------------------------------------------------------- */
-
-    const cacheRequest = new Request(cacheKey);
-    let cached =
-        await cache.match(cacheRequest);
-
-    if (cached) {
-
-        const cachedJson =
-            await cached.json();
-
-        return await sendTelegram(
-
-            cachedJson.chatId,
-
-            data.fields,
-
-            data.page,
-
-            env
-
-        );
-
-    }
-
-    /* --------------------------------------------------------
-       Lookup Firebase
+       Lookup the public token node (telegram + uid + meta).
+       We read the whole pub node so we also get uid + meta in one call.
     -------------------------------------------------------- */
 
     const firebaseURL =
         firebaseBase +
         "/pub/" +
-        encodeURIComponent(
-            data.accessToken
-        ) +
-        "/telegram.json";
+        tokenKey +
+        ".json";
 
     let response;
 
@@ -1326,11 +1430,11 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    let value;
+    let node;
 
     try {
 
-        value =
+        node =
             await response.json();
 
     }
@@ -1348,8 +1452,9 @@ async function resolveDestination(data, env, ctx) {
     }
 
     if (
-        !value ||
-        String(value).trim() === ""
+        !node ||
+        !node.telegram ||
+        String(node.telegram).trim() === ""
     ) {
 
         // Issue 10: Cache invalid tokens
@@ -1367,7 +1472,145 @@ async function resolveDestination(data, env, ctx) {
     }
 
     const chatId =
-        String(value).trim();
+        String(node.telegram).trim();
+
+    const meta =
+        (node.meta && typeof node.meta === "object") ? node.meta : {};
+
+    // --------------------------------------------------------
+    // BLOCKED STATE: do not fulfil ANY request for this token.
+    // --------------------------------------------------------
+    if (meta.blocked === true) {
+
+        return json(
+            {
+                ok: false,
+                error: "Access token blocked",
+                blocked: true
+            },
+            403,
+            env
+        );
+
+    }
+
+    // --------------------------------------------------------
+    // SITE AUTHENTICATION
+    // The request's origin must match the site the token was
+    // issued for. We resolve the user profile via pub/{token}/uid
+    // then read users/{uid}.siteUrl.
+    // --------------------------------------------------------
+    const requestOrigin = safeOrigin(data.page);
+
+    let siteOk = false;
+    let ownerUid = node.uid ? String(node.uid) : "";
+
+    if (requestOrigin && ownerUid) {
+
+        try {
+
+            const profile =
+                await firebaseGet(
+                    firebaseBase,
+                    "users/" + encodeURIComponent(ownerUid)
+                );
+
+            const storedSite =
+                profile && profile.siteUrl
+                    ? String(profile.siteUrl).trim()
+                    : "";
+
+            if (storedSite) {
+                siteOk = originsMatch(requestOrigin, storedSite);
+            }
+
+        }
+        catch (_) {
+            /* fall through to siteOk = false */
+        }
+
+    }
+
+    if (!siteOk && requestOrigin) {
+
+        // Unauthorized practice / token exposure detected.
+        // Do NOT forward form data. Notify the token OWNER and
+        // bump the exposed-chance counter (max 3 -> block).
+        const chances =
+            (typeof meta.exposedChances === "number")
+                ? meta.exposedChances
+                : 0;
+
+        const newChances = chances + 1;
+        const nowBlocked = newChances >= MAX_EXPOSED_CHANCES;
+
+        const patch = {
+            meta: Object.assign({}, meta, {
+                exposedChances: newChances,
+                lastExposureAt: Date.now(),
+                blocked: nowBlocked
+            })
+        };
+
+        ctx.waitUntil(
+            firebasePatch(firebaseBase, "pub/" + tokenKey, patch)
+        );
+
+        if (ownerUid) {
+            ctx.waitUntil(
+                firebasePatch(
+                    firebaseBase,
+                    "users/" + encodeURIComponent(ownerUid),
+                    {
+                        exposedChances: newChances,
+                        blocked: nowBlocked
+                    }
+                )
+            );
+        }
+
+        if (nowBlocked) {
+
+            await notifyOwner(
+                chatId,
+                "🚫 <b>Your TrigifyX access token has been BLOCKED</b>\n\n" +
+                "Reason: Unauthorized practices / access token exposed.\n\n" +
+                "A form submission was received from an unrecognized origin " +
+                "(<code>" + escapeHTML(requestOrigin) + "</code>) " +
+                MAX_EXPOSED_CHANCES + " times. For your security this token " +
+                "will no longer forward any submissions.\n\n" +
+                "Please regenerate your API key from your dashboard to get a " +
+                "new token.",
+                env
+            );
+
+        } else {
+
+            await notifyOwner(
+                chatId,
+                "⚠️ <b>Security alert</b>\n\n" +
+                "A form submission was received from an unrecognized origin " +
+                "(<code>" + escapeHTML(requestOrigin) + "</code>) that does " +
+                "not match your connected site.\n\n" +
+                "Your token was NOT used to send form data. Exposure attempt " +
+                newChances + " of " + MAX_EXPOSED_CHANCES + ". After " +
+                MAX_EXPOSED_CHANCES + " attempts your token will be blocked.",
+                env
+            );
+
+        }
+
+        return json(
+            {
+                ok: false,
+                error: "Invalid credentials",
+                code: "SITE_MISMATCH"
+            },
+            403,
+            env
+        );
+
+    }
 
     /* --------------------------------------------------------
        Cache chatId (Issue 6: Use Request object)
@@ -1377,7 +1620,7 @@ async function resolveDestination(data, env, ctx) {
 
         cache.put(
 
-            cacheRequest,
+            cacheRequestSafe(cacheKey, chatId),
 
             new Response(
 
@@ -1408,6 +1651,49 @@ async function resolveDestination(data, env, ctx) {
     );
 
     /* --------------------------------------------------------
+       STORE LAST SUBMISSION + INCREMENT COUNT (meta)
+       We never persist raw form values that aren't needed;
+       we keep a light summary for the dashboard.
+    -------------------------------------------------------- */
+
+    const prevCount =
+        (typeof meta.submissionCount === "number")
+            ? meta.submissionCount
+            : 0;
+
+    const newCount = prevCount + 1;
+
+    const metaPatch = {
+        meta: Object.assign({}, meta, {
+            submissionCount: newCount,
+            lastSubmissionAt: Date.now(),
+            lastSubmissionPage: data.page || "Unknown",
+            exposedChances:
+                (typeof meta.exposedChances === "number")
+                    ? meta.exposedChances
+                    : 0
+        })
+    };
+
+    ctx.waitUntil(
+        firebasePatch(firebaseBase, "pub/" + tokenKey, metaPatch)
+    );
+
+    if (ownerUid) {
+        ctx.waitUntil(
+            firebasePatch(
+                firebaseBase,
+                "users/" + encodeURIComponent(ownerUid),
+                {
+                    submissionCount: newCount,
+                    lastSubmissionAt: Date.now(),
+                    lastSubmissionPage: data.page || "Unknown"
+                }
+            )
+        );
+    }
+
+    /* --------------------------------------------------------
        Continue
     ------------------------------------------------------- */
 
@@ -1423,6 +1709,61 @@ async function resolveDestination(data, env, ctx) {
 
     );
 
+}
+
+function cacheRequestSafe(cacheKey, _chatId) {
+    return new Request(cacheKey);
+}
+
+/* --------------------------------------------------------
+   Origin helpers
+-------------------------------------------------------- */
+
+function safeOrigin(page) {
+    if (!page || typeof page !== "string")
+        return "";
+    try {
+        return new URL(page).origin;
+    } catch (_) {
+        return "";
+    }
+}
+
+function originsMatch(requestOrigin, storedSite) {
+    let storedOrigin = "";
+    try {
+        storedOrigin = new URL(storedSite).origin;
+    } catch (_) {
+        return false;
+    }
+    if (!storedOrigin || !requestOrigin)
+        return false;
+
+    storedOrigin = storedOrigin.toLowerCase();
+    requestOrigin = requestOrigin.toLowerCase();
+
+    // Exact origin match (covers all sub-paths like /sample/site).
+    if (storedOrigin === requestOrigin)
+        return true;
+
+    // Also allow subdomains of the registered host, e.g. a user who
+    // registered trigify.vercel.app can also submit from
+    // shop.trigify.vercel.app. We only relax the host, never the
+    // registrable domain, so a token can't be reused on an unrelated site.
+    try {
+        const stored = new URL(storedOrigin);
+        const req = new URL(requestOrigin);
+        if (stored.protocol !== req.protocol)
+            return false;
+        const storedHost = stored.host;          // e.g. trigify.vercel.app
+        const reqHost = req.host;                // e.g. shop.trigify.vercel.app
+        // reqHost must end with "." + storedHost (a real subdomain), not just
+        // be a string suffix (avoids "eviltrigify.vercel.app" matching).
+        return reqHost === storedHost ||
+               reqHost.endsWith("." + storedHost);
+    } catch (_) {
+        return false;
+    }
 }
 
 /* ============================================================
