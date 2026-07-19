@@ -81,36 +81,12 @@ cached (per-hash) to suppress repeats.
 - Telegram send has a 5s timeout with `AbortController`.
 
 ### 6. Firebase rules (deployer responsibility)
-The Worker talks to Firebase over the **unauthenticated REST API**, so rules must allow
-the Worker's reads/writes. Reference rules:
-
-```json
-{
-  "rules": {
-    "pub": {
-      "$token": {
-        "telegram": { ".read": true,  ".write": "auth != null" },
-        "uid":      { ".read": true,  ".write": "auth != null" },
-        "siteUrl":  { ".read": true,  ".write": "auth != null" },
-        "meta":     { ".read": true,  ".write": true },
-        "exposed":  { ".read": true,  ".write": true }
-      }
-    },
-    "users": {
-      "$uid": {
-        ".read": "auth != null && auth.uid == $uid",
-        ".write": "auth != null && auth.uid == $uid",
-        "siteUrl": { ".read": true, ".write": "auth != null && auth.uid == $uid" }
-      }
-    }
-  }
-}
-```
-
-> The worker-written bookkeeping (submission count, last submission, exposure, blocked)
-> lives in **`pub/{token}/meta`** (`.write: true`) because the Worker cannot write
-> `users/{uid}` (rules restrict it to the owner). The dashboard reads `pub/{token}/meta`
-> to show those stats.
+The Worker talks to Firebase over the **unauthenticated REST API**, so the database
+rules must permit the Worker's reads/writes. The bookkeeping the Worker writes
+(submission count, last submission, exposure, blocked) lives in **`pub/{token}/meta`**,
+which must be publicly writable, while private profile data under `users/{uid}` stays
+owner-only. The dashboard reads `pub/{token}/meta` to display those stats. Configure the
+exact rules in the Firebase console for your project.
 
 ---
 
