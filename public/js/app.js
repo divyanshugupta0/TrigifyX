@@ -199,6 +199,28 @@ async function saveProfile(u, p) {
   return set(ref(db, "users/" + u.uid), p);
 }
 
+// Merge the worker-written bookkeeping from pub/{token}/meta into the
+// profile object. This node is readable by the (unauthenticated) client
+// and is where the worker actually stores counters / exposure / last
+// submission, since it cannot write users/{uid}.
+async function mergeTokenMeta(p) {
+  if (!p || !p.accessToken) return;
+  const db = (window.__fb || {}).db;
+  if (!db) return;
+  try {
+    const snap = await get(ref(db, "pub/" + p.accessToken + "/meta"));
+    const m = snap.val();
+    if (!m) return;
+    if (typeof m.submissionCount === "number") p.submissionCount = m.submissionCount;
+    if (typeof m.lastSubmissionAt !== "undefined") p.lastSubmissionAt = m.lastSubmissionAt;
+    if (typeof m.lastSubmissionPage !== "undefined") p.lastSubmissionPage = m.lastSubmissionPage;
+    if (typeof m.exposedChances === "number") p.exposedChances = m.exposedChances;
+    if (typeof m.lastExposureAt !== "undefined") p.lastExposureAt = m.lastExposureAt;
+    if (typeof m.blocked === "boolean") p.blocked = m.blocked;
+    window.__profile = p;
+  } catch (_) { /* best-effort */ }
+}
+
 /* ---------- UI rendering ---------- */
 function showAuth() {
   $("#auth-view").classList.remove("hide");
@@ -690,12 +712,29 @@ async function onLogin(u) {
 
   window.__profile = p;
 
+  // Pull the worker-written bookkeeping from the public token node
+  // (pub/{token}/meta). The worker cannot write users/{uid} (rules
+  // restrict it to the owner), so the authoritative counters,
+  // exposure state and last submission live here. Merge into p so
+  // the dashboard reflects them.
+  await mergeTokenMeta(p);
+
   // Ensure the public lookup node exists (for the capture script).
   const db = (window.__fb || {}).db;
   if (db) {
     await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
     await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
   }
+
+  // Keep the dashboard live: refresh the merged meta periodically.
+  if (window.__metaTimer) clearInterval(window.__metaTimer);
+  window.__metaTimer = setInterval(async () => {
+    if (!currentUser) return;
+    const fresh = currentProfile();
+    if (!fresh) return;
+    await mergeTokenMeta(fresh);
+    renderProfile(fresh);
+  }, 8000);
   // If a Google/SSO user is missing required details, force profile completion.
   const missing = !p.name || !p.telegram;
   if (missing) {

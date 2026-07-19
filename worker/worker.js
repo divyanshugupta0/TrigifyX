@@ -1174,11 +1174,24 @@ async function handleSubmit(request, env, ctx) {
 
     // --------------------------------------------------------
     // Issue 5: Server-Side Idempotency Check
+    // We claim the hash BEFORE sending so that concurrent or
+    // rapidly-retried submissions of the exact same payload are
+    // de-duplicated and only delivered to Telegram once.
     // --------------------------------------------------------
 
     const submissionHash = generateSubmissionHash(trimmedToken, pageUrl, sanitizedFields);
+
+    // Fast path: already delivered recently.
     const cachedResponse = await checkIdempotencyCache(submissionHash, ctx);
     if (cachedResponse) {
+        return json({ ok: true, duplicate: true }, 200, env);
+    }
+
+    // Claim this hash for a short window so a simultaneous/retried
+    // request with the same payload does not double-send.
+    const claimed = await claimIdempotency(submissionHash, ctx);
+    if (!claimed) {
+        // Another in-flight request already owns this exact submission.
         return json({ ok: true, duplicate: true }, 200, env);
     }
 
@@ -1236,6 +1249,32 @@ async function checkIdempotencyCache(hash, ctx) {
         return await cached.json();
     }
     return null;
+}
+
+/* ============================================================
+   Claim Idempotency (Issue 5) - prevents double delivery
+   Writes a short-lived claim; only the first writer within the
+   window wins. Concurrent requests see the claim and skip.
+============================================================ */
+
+async function claimIdempotency(hash, ctx) {
+    const cache = caches.default;
+    const key = "https://cache.trigifyx.claim/" + encodeURIComponent(hash);
+    const request = new Request(key);
+
+    const existing = await cache.match(request);
+    if (existing) {
+        return false; // already claimed by an in-flight request
+    }
+
+    const response = new Response("claimed", {
+        headers: {
+            "Content-Type": "text/plain",
+            "Cache-Control": "public, max-age=15"
+        }
+    });
+    await cache.put(request, response);
+    return true;
 }
 
 /* ============================================================
