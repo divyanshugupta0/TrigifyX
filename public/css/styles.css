@@ -841,19 +841,53 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
 ========================================================================== */
 .footer{
   margin-top:90px;
-  padding:45px 6%;
+  padding:38px 6% 30px;
   border-top:1px solid var(--border-soft);
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  background:rgba(255,255,255,.4);
-  backdrop-filter:blur(var(--glass-blur));
-  -webkit-backdrop-filter:blur(var(--glass-blur));
+  background:linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.55));
+  backdrop-filter:blur(var(--glass-blur)) saturate(150%);
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(150%);
 }
-.footer div{ display:flex; align-items:center; gap:14px; }
-.footer img{ width:42px; height:42px; border-radius:12px; }
-.footer span{ font-size:20px; font-weight:700; }
-.footer p{ color:var(--muted); font-size:14px; }
+.footer-inner{
+  max-width:1200px;
+  margin:0 auto;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:26px;
+}
+.footer-brand{ display:flex; align-items:center; gap:14px; }
+.footer-brand img{
+  width:46px; height:46px; border-radius:14px;
+  box-shadow:0 6px 18px rgba(37,99,235,.25);
+}
+.footer-logo{
+  display:block;
+  font-size:20px; font-weight:800; letter-spacing:-.3px;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.footer-tag{ margin:2px 0 0; color:var(--muted); font-size:13px; font-weight:500; }
+.footer-links{ display:flex; gap:26px; flex-wrap:wrap; }
+.footer-links a{
+  color:var(--muted); font-size:14px; font-weight:600; text-decoration:none;
+  position:relative; transition:var(--transition);
+}
+.footer-links a::after{
+  content:""; position:absolute; left:0; bottom:-6px; height:2px; width:0;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  transition:var(--transition);
+}
+.footer-links a:hover{ color:var(--accent); }
+.footer-links a:hover::after{ width:100%; }
+.footer-meta{ text-align:right; line-height:1.5; }
+.footer-copy{ margin:0; color:var(--muted); font-size:13px; }
+.developed-by{ margin:4px 0 0; color:var(--text); font-size:13px; font-weight:500; }
+.developed-by strong{
+  font-weight:700;
+  background:linear-gradient(90deg,var(--accent),var(--accent-2));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
 
 /* ==========================================================================
    SCROLLBAR / SELECTION
@@ -887,7 +921,9 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
   .grid{ grid-template-columns:1fr; }
   .stats-grid{ grid-template-columns:1fr; }
   .feature-grid{ grid-template-columns:1fr; }
-  .footer{ flex-direction:column; gap:20px; text-align:center; }
+  .footer-inner{ flex-direction:column; align-items:center; text-align:center; gap:22px; }
+  .footer-meta{ text-align:center; }
+  .footer-links{ justify-content:center; }
   .dashboard-layout{ grid-template-columns:1fr; }
   .dashboard-sidebar{ position:static; }
   .dash-grid{ grid-template-columns:1fr; }
