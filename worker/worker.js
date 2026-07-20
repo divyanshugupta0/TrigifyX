@@ -942,27 +942,41 @@ async function handleTestMessage(request, env, ctx) {
         return json({ ok: false, error: "Firebase not configured" }, 500, env);
     }
 
-    let node;
+    // Read the specific child nodes (allowed by Firebase rules) rather than
+    // the parent pub/{token} node, which rules deny to unauthenticated reads.
+    let telegram = "";
+    let blocked = false;
     try {
-        const res = await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + ".json", {
-            headers: { "Accept": "application/json" }
-        });
-        if (!res.ok) return json({ ok: false, error: "Access token not linked" }, 404, env);
-        node = await res.json();
+        const [tgRes, metaRes] = await Promise.all([
+            fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/telegram.json", {
+                headers: { "Accept": "application/json" }
+            }),
+            fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/meta.json", {
+                headers: { "Accept": "application/json" }
+            })
+        ]);
+        if (tgRes.ok) {
+            const tv = await tgRes.json();
+            if (tv && String(tv).trim() !== "") telegram = String(tv).trim();
+        }
+        if (metaRes.ok) {
+            const mv = await metaRes.json();
+            if (mv && typeof mv === "object" && mv.blocked === true) blocked = true;
+        }
     } catch {
         return json({ ok: false, error: "Unable to reach Firebase" }, 502, env);
     }
 
-    if (!node || !node.telegram || String(node.telegram).trim() === "") {
+    if (!telegram) {
         return json({ ok: false, error: "Access token not linked" }, 404, env);
     }
 
     // Blocked tokens cannot send anything.
-    if (node.meta && node.meta.blocked === true) {
+    if (blocked) {
         return json({ ok: false, error: "Access token blocked", blocked: true }, 403, env);
     }
 
-    const chatId = String(node.telegram).trim();
+    const chatId = telegram;
     const result = await sendTelegram(
         chatId,
         { test: "This is a test message from TrigifyX ✅" },
