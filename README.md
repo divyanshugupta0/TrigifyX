@@ -50,9 +50,13 @@ The install snippet embeds a random 72-hex **`accessToken`** generated client-si
 dashboard, which instantly invalidates the old one.
 
 ### 2. Server-side origin validation (anti-exposure)
-Each token can have a registered **`siteUrl`** (origin only, e.g.
-`https://yoursite.com`). On every submission the Worker compares the request origin
-against it. A submission from an **unrecognized origin** is treated as token exposure:
+Each token can have one or more registered **sites** (origins only, e.g.
+`https://yoursite.com`). The dashboard lets a user register **multiple sites per
+account** — all sharing the same access token — stored as `pub/{token}/siteUrls`
+(the legacy single `pub/{token}/siteUrl` is still read for backward
+compatibility). On every submission the Worker compares the request origin
+against **every** registered site. A submission from an **unrecognized origin**
+(matching none of them) is treated as token exposure:
 
 - The form data is **never forwarded** to Telegram.
 - The owner gets a **security-alert** Telegram message.
@@ -60,8 +64,9 @@ against it. A submission from an **unrecognized origin** is treated as token exp
 - After **3** exposure attempts the token is **auto-blocked** (`blocked: true`) and all
   further submissions are rejected with `403`.
 
-A matching origin (exact or a real subdomain of the registered host) is a legitimate
-submission and is delivered normally — it does **not** bump the exposure counter.
+A matching origin (exact or a real subdomain of any registered host) is a
+legitimate submission and is delivered normally — it does **not** bump the
+exposure counter. If **no** sites are registered yet, all origins are allowed.
 
 ### 3. Token blocking & regeneration
 - A blocked token returns `403 "Access token blocked"` and delivers nothing.
@@ -85,8 +90,11 @@ The Worker talks to Firebase over the **unauthenticated REST API**, so the datab
 rules must permit the Worker's reads/writes. The bookkeeping the Worker writes
 (submission count, last submission, exposure, blocked) lives in **`pub/{token}/meta`**,
 which must be publicly writable, while private profile data under `users/{uid}` stays
-owner-only. The dashboard reads `pub/{token}/meta` to display those stats. Configure the
-exact rules in the Firebase console for your project.
+owner-only. The owner's client also writes the registered origins to
+**`pub/{token}/siteUrl`** and **`pub/{token}/siteUrls`** (the multi-site list), which
+the Worker reads to validate submission origins. The dashboard reads
+`pub/{token}/meta` to display those stats. Configure the exact rules in the Firebase
+console for your project.
 
 ---
 

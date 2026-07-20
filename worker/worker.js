@@ -1439,12 +1439,12 @@ async function resolveDestination(data, env, ctx) {
         previous working behavior while adding the new features.
     -------------------------------------------------------- */
 
-    let ownerUid, profile, meta, pubTelegram, pubSiteUrl;
+    let ownerUid, profile, meta, pubTelegram, pubSiteUrl, pubSiteUrls;
 
     try {
 
         // Fire all reads in parallel; missing nodes are tolerated.
-        const [telegramRes, uidRes, profileRes, metaRes, siteUrlRes] =
+        const [telegramRes, uidRes, profileRes, metaRes, siteUrlRes, siteUrlsRes] =
             await Promise.all([
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/telegram.json", {
@@ -1463,6 +1463,13 @@ async function resolveDestination(data, env, ctx) {
                 }),
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/siteUrl.json", {
+                    headers: { "Accept": "application/json" }
+                }),
+
+                // Multi-site support: a list of registered origins authorized
+                // to use this token. Backward-compatible with the single
+                // /siteUrl node above.
+                fetch(firebaseBase + "/pub/" + tokenKey + "/siteUrls.json", {
                     headers: { "Accept": "application/json" }
                 })
 
@@ -1507,6 +1514,15 @@ async function resolveDestination(data, env, ctx) {
                 ? String(pubSiteUrlValue).trim()
                 : "";
 
+        // Parse the multi-site list. Firebase may store it as an array or as
+        // an object map (key -> origin); normalize both to an array of
+        // trimmed origin strings.
+        let siteUrlsRaw = null;
+        if (siteUrlsRes && siteUrlsRes.ok) {
+            try { siteUrlsRaw = await siteUrlsRes.json(); } catch (_) {}
+        }
+        pubSiteUrls = normalizeSiteList(siteUrlsRaw);
+
     }
     catch {
 
@@ -1548,9 +1564,15 @@ async function resolveDestination(data, env, ctx) {
 
     // Prefer the public token node (mirrored by the app, readable by the
     // unauthenticated worker); fall back to the private users/{uid} profile.
-    const siteUrl =
-        pubSiteUrl ||
-        (profile && profile.siteUrl ? String(profile.siteUrl).trim() : "");
+    // Build the full list of registered origins for this token from every
+    // source: the multi-site list, the legacy single siteUrl node, and the
+    // profile's siteUrl / siteUrls (backward compatible).
+    const registeredSites = normalizeSiteList([
+        ...(Array.isArray(pubSiteUrls) ? pubSiteUrls : []),
+        pubSiteUrl,
+        (profile && profile.siteUrl) ? profile.siteUrl : "",
+        ...((profile && Array.isArray(profile.siteUrls)) ? profile.siteUrls : [])
+    ]);
 
     const safeMeta =
         (meta && typeof meta === "object") ? meta : {};
@@ -1574,17 +1596,19 @@ async function resolveDestination(data, env, ctx) {
 
     // --------------------------------------------------------
     // SITE AUTHENTICATION
-    // Match the request origin against the registered siteUrl.
-    // If no siteUrl is registered yet, allow the submission.
+    // Match the request origin against ANY of the registered sites.
+    // If no sites are registered yet, allow the submission.
     // --------------------------------------------------------
     const requestOrigin = safeOrigin(data.page);
     let siteOk = true;
 
-    if (requestOrigin && siteUrl) {
+    if (requestOrigin && registeredSites.length > 0) {
 
-        siteOk = originsMatch(requestOrigin, siteUrl);
+        siteOk = registeredSites.some(function (site) {
+            return originsMatch(requestOrigin, site);
+        });
 
-        // Only treat as exposure when the origin does NOT match the
+        // Only treat as exposure when the origin does NOT match ANY
         // registered site. A matching origin is a legitimate submission.
         if (!siteOk) {
 
@@ -1775,6 +1799,31 @@ function cacheRequestSafe(cacheKey, _chatId) {
 /* --------------------------------------------------------
    Origin helpers
 -------------------------------------------------------- */
+
+// Normalize a registered-site value into a de-duplicated array of trimmed
+// origin strings. Accepts an array, a Firebase object map (key -> origin),
+// a single string, or null/undefined. Empty values are dropped.
+function normalizeSiteList(raw) {
+    const out = [];
+    const seen = new Set();
+    const push = function (v) {
+        if (v === null || typeof v === "undefined") return;
+        const s = String(v).trim();
+        if (!s) return;
+        const key = s.toLowerCase();
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(s);
+    };
+    if (Array.isArray(raw)) {
+        raw.forEach(push);
+    } else if (raw && typeof raw === "object") {
+        Object.keys(raw).forEach(function (k) { push(raw[k]); });
+    } else {
+        push(raw);
+    }
+    return out;
+}
 
 function safeOrigin(page) {
     if (!page || typeof page !== "string")

@@ -978,6 +978,31 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
 .submission-log li .sub-site{ color:var(--accent); font-weight:700; word-break:break-all; }
 .submission-log li.empty{ color:var(--muted); text-align:center; background:transparent; border-style:dashed; }
 
+/* Multi-site: add row + registered sites list */
+.site-add-row{ gap:10px; align-items:stretch; }
+.site-add-row input{ flex:1; margin:0; }
+.site-add-row .btn{ white-space:nowrap; }
+
+.site-list{ list-style:none; margin-top:16px; display:flex; flex-direction:column; gap:10px; }
+.site-list li.empty{
+  color:var(--muted); text-align:center; font-size:14px;
+  background:transparent; border:1px dashed var(--border-soft);
+  border-radius:14px; padding:14px 16px;
+}
+.site-item{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  background:rgba(255,255,255,.45);
+  border:1px solid var(--border-soft);
+  border-radius:14px;
+  padding:12px 14px;
+  animation:fadeUp .4s ease both;
+}
+.site-item .site-url{
+  font-weight:700; color:var(--accent);
+  word-break:break-all; overflow:hidden; text-overflow:ellipsis;
+}
+.site-item .site-remove{ flex:none; padding:8px 14px; font-size:13px; }
+
 .tips{ list-style:none; margin-top:14px; display:flex; flex-direction:column; gap:12px; }
 .tips li{ position:relative; padding-left:26px; color:var(--muted); font-size:14px; line-height:1.7; }
 .tips li::before{

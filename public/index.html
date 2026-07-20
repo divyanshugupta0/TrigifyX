@@ -304,7 +304,7 @@
                             <!-- shown instead of the setup steps once site/telegram/apiKey are all configured -->
                             <div class="kv-group hide" id="acct-extra">
                                 <div class="kv">
-                                    <span class="k">Website</span>
+                                    <span class="k">Websites</span>
                                     <span class="v" id="acct-site">—</span>
                                 </div>
                                 <div class="kv">
@@ -350,19 +350,23 @@
 
                         <!-- STEP 1: WEBSITE -->
                         <li id="site-card" class="card setup-step">
-                            <h2>Your Website</h2>
+                            <h2>Your Websites</h2>
                             <p class="lead">
-                                Enter the URL where you installed the TrigifyX snippet.
-                                This is saved to your account for reference and is used
-                                as the destination for your form submissions.
+                                Register every website where you use your TrigifyX
+                                access token. Your token only accepts form submissions
+                                from origins you list here — add as many sites as you
+                                need, all sharing the same access token.
                             </p>
 
-                            <label>Website URL / Endpoint</label>
-                            <input id="site-url" type="text" placeholder="https://yoursite.com">
-
-                            <div class="row mt">
-                                <button class="btn" id="site-save">Save Site</button>
+                            <label>Website URL</label>
+                            <div class="row site-add-row">
+                                <input id="site-url" type="text" placeholder="https://yoursite.com">
+                                <button class="btn" id="site-save">Add Site</button>
                             </div>
+
+                            <ul class="site-list" id="site-list">
+                                <li class="empty">No sites registered yet — add your first site above.</li>
+                            </ul>
                         </li>
 
                         <!-- STEP 2: TELEGRAM -->
@@ -489,7 +493,7 @@
                         <div class="card">
                             <h2>Connection</h2>
                             <div class="kv">
-                                <span class="k">Website</span>
+                                <span class="k">Websites</span>
                                 <span class="v" id="dash-site">—</span>
                             </div>
                             <div class="kv">

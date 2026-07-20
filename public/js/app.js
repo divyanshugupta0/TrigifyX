@@ -295,8 +295,11 @@ function renderProfile(p) {
   // so it doesn't hide itself again on the next visit.
   $("#install-card").classList.toggle("hide", !p.apiKeyIssued || p.setupComplete);
 
-  // Pre-fill the saved website URL so it's never asked for twice.
-  $("#site-url").value = p.siteUrl || "";
+  // The site input is an "add new site" field; keep it empty on render.
+  $("#site-url").value = "";
+
+  // Render the registered sites list (multi-site per token).
+  renderSites(p);
 
   // The setup flow (3 steps) stays visible until the user finishes setup.
   // Finishing requires: key issued + site + telegram + confirm received +
@@ -306,7 +309,10 @@ function renderProfile(p) {
   // Account Information summary block shows once setup is complete.
   $("#acct-extra").classList.toggle("hide", !setupDone);
   if (setupDone) {
-    $("#acct-site").textContent = p.siteUrl;
+    const sites = getSites(p);
+    $("#acct-site").textContent = sites.length
+      ? (sites.length === 1 ? sites[0] : sites.length + " sites")
+      : "—";
     $("#acct-tg").textContent = p.telegram;
     $("#acct-apikey").textContent = p.accessToken || "—";
   }
@@ -354,10 +360,43 @@ function renderSnippet(p) {
   window.__lastSnippet = snippet;
 }
 
+// Escape user-provided text before inserting into innerHTML.
+function escapeHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Render the registered sites list in the setup card. Each row has a Remove
+// button carrying its index (read by the delegated handler in bindUI).
+function renderSites(p) {
+  const ul = $("#site-list");
+  if (!ul) return;
+  const sites = getSites(p);
+  if (!sites.length) {
+    ul.innerHTML = '<li class="empty">No sites registered yet — add your first site above.</li>';
+    return;
+  }
+  ul.innerHTML = sites.map((s, i) =>
+    '<li class="site-item">' +
+      '<span class="site-url" title="' + escapeHtml(s) + '">' + escapeHtml(s) + '</span>' +
+      '<button class="btn ghost site-remove" data-site-index="' + i + '">Remove</button>' +
+    '</li>'
+  ).join("");
+}
+
 function renderDashboard(p) {
-  const site = p.siteUrl || "—";
-  $("#disp-site-short").textContent = site.replace(/^https?:\/\//, "") || "—";
-  $("#dash-site").textContent = site;
+  const sites = getSites(p);
+  const firstShort = sites.length ? sites[0].replace(/^https?:\/\//, "") : "—";
+  $("#disp-site-short").textContent = sites.length > 1
+    ? sites.length + " sites"
+    : firstShort;
+  $("#dash-site").textContent = sites.length
+    ? (sites.length === 1 ? sites[0] : sites.join(", "))
+    : "—";
   $("#dash-tg").textContent = p.telegram || "—";
   $("#dash-terms").textContent = p.termsAcceptedAt
     ? new Date(p.termsAcceptedAt).toLocaleString()
@@ -459,6 +498,58 @@ function isValidSiteUrl(v) {
 }
 function isValidTelegram(v) {
   return /^@?[\w]{3,}$/.test(v.trim()) || /^\d{4,}$/.test(v.trim());
+}
+
+/* ---------- Sites (multi-site per token) ---------- */
+// Return the profile's registered sites as a de-duplicated array of origins.
+// Migrates the legacy single `siteUrl` string into the list transparently so
+// existing accounts keep working without any manual step.
+function getSites(p) {
+  const out = [];
+  const seen = new Set();
+  const push = (v) => {
+    if (!v) return;
+    const s = String(v).trim();
+    if (!s) return;
+    const key = s.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(s);
+  };
+  if (p && Array.isArray(p.siteUrls)) p.siteUrls.forEach(push);
+  if (p && p.siteUrl) push(p.siteUrl);
+  return out;
+}
+
+// Persist a sites array onto the profile (and keep the legacy single
+// `siteUrl` mirrored to the first entry for backward compatibility with the
+// existing dashboard summary + older worker fallbacks).
+function setSites(p, sites) {
+  const list = [];
+  const seen = new Set();
+  (sites || []).forEach((v) => {
+    if (!v) return;
+    const s = String(v).trim();
+    if (!s) return;
+    const key = s.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    list.push(s);
+  });
+  p.siteUrls = list;
+  p.siteUrl = list.length ? list[0] : "";
+  return list;
+}
+
+// Mirror the sites list to the public token node so the (unauthenticated)
+// worker can validate submission origins without reading users/{uid}.
+async function mirrorSitesToPub(p) {
+  const db = (window.__fb || {}).db;
+  if (!db || !p || !p.accessToken) return;
+  const list = getSites(p);
+  await set(ref(db, "pub/" + p.accessToken + "/siteUrls"), list);
+  // Keep the legacy single node in sync (first site) for old readers.
+  await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), list.length ? list[0] : null);
 }
 
 /* ---------- Wire up ---------- */
@@ -571,44 +662,63 @@ function bindUI() {
         // without reading the private users/{uid} node.
         await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
         await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
-        if (p.siteUrl) {
-          await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), p.siteUrl);
-        }
+        await mirrorSitesToPub(p);
       }
       renderProfile(p);
       toast("Telegram account linked");
     });
   };
 
-  // Save the user's website URL and persist it to Firebase / localStorage
-  // so the field arrives already filled in on the next visit.
+  // Add a website to the account's registered sites list. The token accepts
+  // submissions from any registered origin. Origins are stored (scheme + host
+  // + port) so they match the worker's origin-based site authentication
+  // regardless of any path.
   $("#site-save").onclick = async () => {
     const raw = $("#site-url").value.trim();
     if (!raw) return toast("Enter your website URL");
     if (!isValidSiteUrl(raw)) return toast("Include the full URL, e.g. https://yoursite.com");
-    // Store only the origin (scheme + host + port) so it matches the
-    // worker's origin-based site authentication regardless of any path.
     let origin;
     try {
       origin = new URL(raw).origin;
     } catch (_) {
       return toast("Enter a valid URL");
     }
-    await withLoading($("#site-save"), "Saving…", async () => {
+    await withLoading($("#site-save"), "Adding…", async () => {
       const p = await getProfile(currentUser);
-      p.siteUrl = origin;
-      await saveProfile(currentUser, p);
-      // Mirror the origin onto the public token node so the worker can
-      // validate the submission origin without reading the private
-      // users/{uid} node (which is locked to the owner's auth).
-      const db = (window.__fb || {}).db;
-      if (db && p.accessToken) {
-        await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), origin);
+      const sites = getSites(p);
+      if (sites.some((s) => s.toLowerCase() === origin.toLowerCase())) {
+        toast("That site is already registered");
+        return;
       }
+      sites.push(origin);
+      setSites(p, sites);
+      await saveProfile(currentUser, p);
+      // Mirror the sites list onto the public token node so the worker can
+      // validate submission origins without reading the private users/{uid}
+      // node (which is locked to the owner's auth).
+      await mirrorSitesToPub(p);
+      $("#site-url").value = "";
       renderProfile(p);
-      toast("Website saved");
+      toast("Site added");
     });
   };
+
+  // Remove a registered site (delegated click on the list).
+  $("#site-list").addEventListener("click", async (e) => {
+    const btn = e.target.closest(".site-remove");
+    if (!btn) return;
+    const idx = parseInt(btn.getAttribute("data-site-index"), 10);
+    if (isNaN(idx)) return;
+    const p = await getProfile(currentUser);
+    const sites = getSites(p);
+    if (idx < 0 || idx >= sites.length) return;
+    const removed = sites.splice(idx, 1)[0];
+    setSites(p, sites);
+    await saveProfile(currentUser, p);
+    await mirrorSitesToPub(p);
+    renderProfile(p);
+    toast("Removed " + removed);
+  });
 
   $("#copy-key").onclick = () => copy($("#disp-apikey").textContent, $("#copy-key"));
   $("#copy-snippet").onclick = () => copy(window.__lastSnippet || "", $("#copy-snippet"));
@@ -681,9 +791,8 @@ function bindUI() {
         // Write the new public token node.
         await set(ref(db, "pub/" + newToken + "/telegram"), p.telegram || "");
         await set(ref(db, "pub/" + newToken + "/uid"), p.uid);
-        if (p.siteUrl) {
-          await set(ref(db, "pub/" + newToken + "/siteUrl"), p.siteUrl);
-        }
+        // Carry the registered sites list over to the new token.
+        await mirrorSitesToPub(p);
         // Fresh token starts unblocked with no exposure history.
         try {
           await set(ref(db, "pub/" + newToken + "/meta"), {
@@ -693,8 +802,8 @@ function bindUI() {
         } catch (_) {}
         // Roll over: invalidate the old token's public node so it can no
         // longer be used to deliver submissions. We clear the identifying
-        // children (telegram/uid/siteUrl) and mark it blocked rather than
-        // removing the parent node, because the Firebase rules only grant
+        // children (telegram/uid/siteUrl/siteUrls) and mark it blocked rather
+        // than removing the parent node, because the Firebase rules only grant
         // write on those children (not on pub/$token itself), so a parent
         // remove would be denied.
         if (oldToken && oldToken !== newToken) {
@@ -702,6 +811,7 @@ function bindUI() {
             await set(ref(db, "pub/" + oldToken + "/telegram"), null);
             await set(ref(db, "pub/" + oldToken + "/uid"), null);
             await set(ref(db, "pub/" + oldToken + "/siteUrl"), null);
+            await set(ref(db, "pub/" + oldToken + "/siteUrls"), null);
             await set(ref(db, "pub/" + oldToken + "/meta"), { blocked: true, exposedChances: 3 });
           } catch (_) {}
         }
@@ -760,6 +870,11 @@ async function onLogin(u) {
   // mark it issued to reveal the install snippet. Kept for setup gating.
   if (!p.apiKeyIssued) { p.apiKeyIssued = true; needsSave = true; }
   if (typeof p.siteUrl === "undefined") { p.siteUrl = ""; needsSave = true; }
+  // Multi-site: migrate the legacy single siteUrl into a siteUrls array.
+  if (!Array.isArray(p.siteUrls)) {
+    p.siteUrls = p.siteUrl ? [p.siteUrl] : [];
+    needsSave = true;
+  }
   if (typeof p.testMessageCount === "undefined") { p.testMessageCount = 0; needsSave = true; }
   if (typeof p.setupComplete === "undefined") { p.setupComplete = false; needsSave = true; }
   if (typeof p.termsAcceptedAt === "undefined") { p.termsAcceptedAt = null; needsSave = true; }
@@ -783,6 +898,8 @@ async function onLogin(u) {
   if (db) {
     await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
     await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
+    // Keep the registered sites mirrored to the public token node.
+    await mirrorSitesToPub(p);
   }
 
   // Keep the dashboard live: refresh the merged meta periodically.
