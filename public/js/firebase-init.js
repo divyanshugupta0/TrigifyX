@@ -9,7 +9,8 @@ import { getDatabase } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-analytics.js";
 import {
   initializeAppCheck,
-  ReCaptchaV3Provider
+  ReCaptchaV3Provider,
+  getToken as getAppCheckToken
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-check.js";
 
 const firebaseConfig = {
@@ -45,6 +46,7 @@ window.__ENV__ = window.__ENV__ || {};
 //
 // Guards ensure App Check is initialized exactly once, and any failure is
 // logged without crashing the app (the UI still loads).
+let appCheckInstance = null;
 (function initAppCheck() {
   const siteKey = window.__ENV__.appCheckSiteKey || "";
   if (!siteKey) {
@@ -57,18 +59,28 @@ window.__ENV__ = window.__ENV__ || {};
   }
   if (window.__fbAppCheckInitialized) return; // never initialize twice
   try {
-    // Development-only debug token. Enabled when a debug flag/token is
-    // present in the env; NEVER enable this in production. Set
-    // window.__ENV__.appCheckDebug = true (or a specific token string) only
-    // for local development against an unenforced project.
-    const debug = window.__ENV__.appCheckDebug;
+    // Development-only debug token. In local development, reCAPTCHA v3 often
+    // cannot issue a token (unregistered host), which surfaces as
+    // appCheck/recaptcha-error. To avoid that locally we enable the App Check
+    // DEBUG provider, which bypasses reCAPTCHA and prints a debug token to the
+    // console — register that token in Firebase Console > App Check > Manage
+    // debug tokens. This is auto-enabled ONLY on localhost/127.0.0.1 (never in
+    // production). You can also force it via window.__ENV__.appCheckDebug.
+    const host = (self.location && self.location.hostname) || "";
+    const isLocalhost =
+      host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+    const debug = window.__ENV__.appCheckDebug || (isLocalhost ? true : false);
     if (debug) {
       // `true` asks the SDK to print a debug token to register in the console;
       // a string uses a pre-registered debug token.
       self.FIREBASE_APPCHECK_DEBUG_TOKEN = debug;
+      console.warn(
+        "[AppCheck] DEBUG token mode enabled (local dev). Register the printed " +
+        "debug token in Firebase Console > App Check > Manage debug tokens."
+      );
     }
 
-    initializeAppCheck(app, {
+    appCheckInstance = initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(siteKey),
       isTokenAutoRefreshEnabled: true // auto-refresh tokens before expiry
     });
@@ -87,6 +99,21 @@ let analytics = null;
 try { analytics = getAnalytics(app); } catch (e) {}
 
 window.__fb = { app, auth, db, analytics };
+
+// Expose an on-demand App Check token fetch so the UI can show a "Verifying…"
+// status when the user submits the auth form. Because reCAPTCHA v3 is
+// invisible, this call is what actually runs the reCAPTCHA assessment and
+// returns a fresh attestation token. Resolves to the token string, or throws
+// if App Check is unavailable / verification fails.
+window.__fb.getAppCheckToken = async function (forceRefresh) {
+  if (!appCheckInstance) {
+    // App Check not initialized (e.g. no site key) — treat as a no-op so the
+    // app still works, but signal that no token was produced.
+    return null;
+  }
+  const result = await getAppCheckToken(appCheckInstance, !!forceRefresh);
+  return result && result.token ? result.token : null;
+};
 window.__ENV__.firebase = firebaseConfig;
 window.__ENV__.databaseURL = firebaseConfig.databaseURL;
 

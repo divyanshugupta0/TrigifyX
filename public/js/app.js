@@ -129,6 +129,34 @@ async function withLoading(btn, loadingLabel, fn) {
 }
 
 /* ---------- Auth ---------- */
+// Runs the (invisible) reCAPTCHA v3 / App Check assessment and returns a fresh
+// attestation token. The button label is switched to a "Verifying…" status so
+// the user gets visible feedback that reCAPTCHA is running, even though there
+// is no checkbox. Returns true on success (or when App Check is disabled), and
+// false if verification fails.
+async function verifyRecaptcha(btn) {
+  const getToken = (window.__fb || {}).getAppCheckToken;
+  if (typeof getToken !== "function") return true; // App Check not enabled
+  const original = btn ? btn.textContent : "";
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Verifying you're human…";
+  }
+  try {
+    const token = await getToken(true);
+    // token === null means App Check isn't configured; allow through.
+    return true;
+  } catch (e) {
+    toast("reCAPTCHA verification failed. Please try again.");
+    return false;
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  }
+}
+
 async function signUp(email, password, name, telegram) {
   const auth = (window.__fb || {}).auth;
   const db = (window.__fb || {}).db;
@@ -460,6 +488,7 @@ function bindUI() {
   });
 
   $("#auth-google").onclick = async () => {
+    if (!(await verifyRecaptcha($("#auth-google")))) return;
     await withLoading($("#auth-google"), "Connecting…", async () => {
       try {
         const u = await signInWithGoogle();
@@ -483,6 +512,9 @@ function bindUI() {
       if (!email || !pass) return toast("Enter email and password");
       if (pass.length < 6) return toast("Password must be at least 6 characters");
       if (pass !== pass2) return toast("Passwords do not match");
+      // Show a visible "Verifying you're human…" status while invisible
+      // reCAPTCHA v3 / App Check runs its assessment.
+      if (!(await verifyRecaptcha($("#auth-submit")))) return;
       await withLoading($("#auth-submit"), "Creating account…", async () => {
         try {
           const u = await signUp(email, pass, name, tg);
@@ -495,6 +527,8 @@ function bindUI() {
     }
 
     if (!email || !pass) return toast("Enter email and password");
+    // Run the invisible reCAPTCHA check with visible button feedback first.
+    if (!(await verifyRecaptcha($("#auth-submit")))) return;
     await withLoading($("#auth-submit"), "Signing in…", async () => {
       try {
         const u = await signIn(email, pass);
