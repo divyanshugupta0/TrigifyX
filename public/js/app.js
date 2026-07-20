@@ -295,8 +295,9 @@ function renderProfile(p) {
   // so it doesn't hide itself again on the next visit.
   $("#install-card").classList.toggle("hide", !p.apiKeyIssued || p.setupComplete);
 
-  // The site input is an "add new site" field; keep it empty on render.
-  $("#site-url").value = "";
+  // The site input is an "add new site" field. We intentionally do NOT touch
+  // it during render, so the periodic dashboard refresh never wipes what the
+  // user is typing. It is cleared explicitly after a successful add.
 
   // Render the registered sites list (multi-site per token).
   renderSites(p);
@@ -372,10 +373,18 @@ function escapeHtml(s) {
 
 // Render the registered sites list in the setup card. Each row has a Remove
 // button carrying its index (read by the delegated handler in bindUI).
+// Only rewrites the DOM when the list actually changed, so the periodic
+// dashboard refresh doesn't cause the list to flicker/reload.
 function renderSites(p) {
   const ul = $("#site-list");
   if (!ul) return;
   const sites = getSites(p);
+
+  // Skip re-render if nothing changed (prevents flicker on the 8s timer).
+  const sig = JSON.stringify(sites);
+  if (ul.dataset.sitesSig === sig) return;
+  ul.dataset.sitesSig = sig;
+
   if (!sites.length) {
     ul.innerHTML = '<li class="empty">No sites registered yet — add your first site above.</li>';
     return;
