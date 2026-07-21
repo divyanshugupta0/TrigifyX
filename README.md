@@ -93,8 +93,39 @@ which must be publicly writable, while private profile data under `users/{uid}` 
 owner-only. The owner's client also writes the registered origins to
 **`pub/{token}/siteUrl`** and **`pub/{token}/siteUrls`** (the multi-site list), which
 the Worker reads to validate submission origins. The dashboard reads
-`pub/{token}/meta` to display those stats. Configure the exact rules in the Firebase
-console for your project.
+`pub/{token}/meta` to display those stats.
+
+The capture script also pings **`pub/{token}/embeds/{encodedOrigin}`** (with a `ts`
+timestamp) on every page load so the Worker can confirm the embed is actually present
+on the page. This node must be **publicly writable** for the embed gate to work.
+Configure the exact rules in the Firebase console for your project, e.g.:
+
+```json
+{
+  "rules": {
+    "pub": {
+      "$token": {
+        "meta":    { ".read": true,  ".write": true },
+        "siteUrl": { ".read": true,  ".write": true },
+        "siteUrls":{ ".read": true,  ".write": true },
+        "embeds":  { ".read": true,  ".write": true },
+        "telegram":{ ".read": true,  ".write": true },
+        "uid":     { ".read": true,  ".write": true }
+      }
+    },
+    "users": {
+      "$uid": { ".read": "auth != null && auth.uid == $uid",
+                ".write": "auth != null && auth.uid == $uid" }
+    }
+  }
+}
+```
+
+**Embed gate (badge enforcement).** The Worker rejects submissions whose origin has
+not pinged `/api/embed` recently (i.e. the capture `<script>` — and its "Powered by
+TrigifyX" badge — is missing from the page). This gate is **opt-in**: set the Worker
+secret `EMBED_GATE=on` *after* the `embeds` rule above exists, otherwise all
+submissions would be rejected. It is off by default.
 
 ---
 

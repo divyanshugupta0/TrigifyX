@@ -275,6 +275,59 @@ const CAPTURE_JS = `/* =========================================================
     }
 
     /* -------------------------------------------------------
+       Embed / Load Ping
+
+       Informs the Worker that this token's capture script actually
+       loaded on a given origin. The Worker records it and uses it to
+       gate submissions: if the embed was never pinged (e.g. the site
+       owner removed the <script> tag), submissions are rejected, so
+       the embed — and its badge — cannot simply be stripped out.
+    ------------------------------------------------------- */
+
+    function pingEmbed() {
+
+        if (!ACCESS_TOKEN || !API_BASE)
+            return;
+
+        const payload = JSON.stringify({
+            accessToken: ACCESS_TOKEN,
+            origin: location.origin,
+            path: location.pathname
+        });
+
+        try {
+
+            if (navigator.sendBeacon) {
+
+                const ok = navigator.sendBeacon(
+                    API_BASE + "/api/embed",
+                    new Blob(
+                        [payload],
+                        { type: "application/json" }
+                    )
+                );
+
+                if (ok)
+                    return;
+
+            }
+
+        }
+        catch (_) { /* fall through to fetch */ }
+
+        fetch(
+            API_BASE + "/api/embed",
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: payload,
+                keepalive: true
+            }
+        ).catch(function () {});
+
+    }
+
+    /* -------------------------------------------------------
        Retry Delay
     ------------------------------------------------------- */
 
@@ -491,10 +544,156 @@ const CAPTURE_JS = `/* =========================================================
     }
 
     /* -------------------------------------------------------
+       Powered-by Badge (advertising)
+
+       Injected below every detected form on page load. Because this
+       runs from the Worker-served capture script (not the user's
+       snippet), site owners can't remove it by editing the snippet.
+       A MutationObserver + guard interval re-inject it if removed and
+       restore its inline styles if someone tries to hide it.
+    ------------------------------------------------------- */
+
+    var TRIGIFYX_SITE = "https://trigifyx.vercel.app";
+    var BADGE_ATTR = "data-trigifyx-badge";
+
+    function badgeStyleText() {
+        return [
+            "display:flex",
+            "align-items:center",
+            "gap:6px",
+            "margin:10px 0 0 0",
+            "padding:6px 10px",
+            "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif",
+            "font-size:13px",
+            "line-height:1.5",
+            "color:#ffffff",
+            "background:#4f46e5",
+            "border-radius:6px",
+            "opacity:1",
+            "visibility:visible",
+            "pointer-events:auto",
+            "user-select:none",
+            "position:relative",
+            "clip:auto",
+            "width:fit-content",
+            "max-width:100%",
+            "overflow:visible",
+            "transform:none",
+            "z-index:2147483647",
+            "box-shadow:0 1px 3px rgba(0,0,0,0.15)"
+        ].join(";") + ";";
+    }
+
+    function linkStyleText() {
+        return [
+            "color:#e0e7ff",
+            "font-weight:700",
+            "text-decoration:underline",
+            "opacity:1",
+            "visibility:visible",
+            "pointer-events:auto"
+        ].join(";") + ";";
+    }
+
+    // Build a fresh badge element.
+    function makeBadge() {
+        var wrap = document.createElement("div");
+        wrap.setAttribute(BADGE_ATTR, "1");
+        wrap.setAttribute("style", badgeStyleText());
+
+        var pre = document.createTextNode("Powered by ");
+
+        var a = document.createElement("a");
+        a.href = TRIGIFYX_SITE;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = "TrigifyX";
+        a.setAttribute("style", linkStyleText());
+        a.setAttribute(BADGE_ATTR + "-link", "1");
+
+        wrap.appendChild(pre);
+        wrap.appendChild(a);
+        return wrap;
+    }
+
+    // Ensure a badge exists immediately after the given form. If the
+    // existing badge was hidden/tampered with, its styles are restored.
+    // Returns true if a badge is present after the call.
+    function ensureBadge(form) {
+        if (!form || !form.parentNode) return false;
+
+        // Fast path: badge already there and intact — no DOM writes.
+        var existing = form.nextElementSibling;
+        var badge =
+            (existing && existing.getAttribute &&
+             existing.getAttribute(BADGE_ATTR) === "1")
+                ? existing
+                : null;
+
+        if (badge && form.__trigifyxBadgeDone) {
+            return true;
+        }
+
+        if (!badge) {
+            badge = makeBadge();
+            if (form.nextSibling) {
+                form.parentNode.insertBefore(badge, form.nextSibling);
+            } else {
+                form.parentNode.appendChild(badge);
+            }
+        } else {
+            badge.setAttribute("style", badgeStyleText());
+            var link = badge.querySelector("[" + BADGE_ATTR + "-link='1']");
+            if (!link) {
+                var fresh = makeBadge();
+                badge.parentNode.replaceChild(fresh, badge);
+                badge = fresh;
+            } else {
+                link.href = TRIGIFYX_SITE;
+                link.setAttribute("style", linkStyleText());
+                link.textContent = "TrigifyX";
+            }
+        }
+
+        form.__trigifyxBadgeDone = true;
+        return true;
+    }
+
+    // Check whether the badge is still present after the form.
+    function hasBadge(form) {
+        if (!form || !form.parentNode) return false;
+        var nxt = form.nextElementSibling;
+        return !!(nxt && nxt.getAttribute &&
+            nxt.getAttribute(BADGE_ATTR) === "1");
+    }
+
+    // Re-assert all badges (called on a light interval and on DOM changes).
+    function enforceBadges() {
+
+        var forms = document.querySelectorAll("form");
+
+        forms.forEach(function (form) {
+            try {
+                ensureBadge(form);
+            } catch (err) {
+                console.warn("[TrigifyX] ensureBadge(form) failed:", err);
+            }
+        });
+
+    }
+
+    /* -------------------------------------------------------
        Attach Form
     ------------------------------------------------------- */
 
     function attach(form) {
+
+        // If the badge was removed (e.g. by site JS), allow re-insert.
+        if (form.__trigifyxBadgeDone && !hasBadge(form)) {
+            form.__trigifyxBadgeDone = false;
+        }
+
+        ensureBadge(form);
 
         if (form.__trigifyxAttached)
             return;
@@ -531,13 +730,11 @@ const CAPTURE_JS = `/* =========================================================
 
     function scan() {
 
-        const forms =
+        var forms =
             document.querySelectorAll("form");
 
         forms.forEach(function (form) {
-
             attach(form);
-
         });
 
     }
@@ -554,12 +751,20 @@ const CAPTURE_JS = `/* =========================================================
 
         const observer = new MutationObserver(function (mutations) {
 
+            var maybeBadgeTampered = false;
+
             mutations.forEach(function (mutation) {
 
                 mutation.addedNodes.forEach(function (node) {
 
                     if (node.nodeType !== 1)
                         return;
+
+                    // Skip badge nodes themselves — they are not forms.
+                    if (node.getAttribute &&
+                        node.getAttribute(BADGE_ATTR) === "1") {
+                        return;
+                    }
 
                     // Directly added form
                     if (node.tagName === "FORM") {
@@ -581,13 +786,42 @@ const CAPTURE_JS = `/* =========================================================
 
                 });
 
+                // Only flag re-enforcement if a non-badge node was removed
+                // or a badge node itself was removed/hidden.
+                if (mutation.type === "childList" && mutation.removedNodes.length) {
+                    mutation.removedNodes.forEach(function (node) {
+                        if (node.nodeType !== 1) return;
+                        var isBadge = node.getAttribute &&
+                            node.getAttribute(BADGE_ATTR) === "1";
+                        var nearBadge = node.querySelector &&
+                            node.querySelector("[" + BADGE_ATTR + "='1']");
+                        if (isBadge || nearBadge) {
+                            maybeBadgeTampered = true;
+                        }
+                    });
+                }
+                if (mutation.type === "attributes") {
+                    var t = mutation.target;
+                    if (t && t.nodeType === 1 && t.getAttribute &&
+                        (t.getAttribute(BADGE_ATTR) === "1" ||
+                         t.getAttribute(BADGE_ATTR + "-link") === "1")) {
+                        maybeBadgeTampered = true;
+                    }
+                }
+
             });
+
+            if (maybeBadgeTampered) {
+                enforceBadges();
+            }
 
         });
 
         observer.observe(document.documentElement, {
             childList: true,
-            subtree: true
+            subtree: true,
+            attributes: true,
+            attributeFilter: ["style", "class", "hidden"]
         });
 
     }
@@ -607,6 +841,14 @@ const CAPTURE_JS = `/* =========================================================
         flushQueue();
 
         startObserver();
+
+        // Tell the Worker this embed is live (used to gate submissions).
+        pingEmbed();
+
+        // Safety net: periodically re-assert badges in case they were
+        // removed or hidden by later scripts/styles on the page.
+        enforceBadges();
+        setInterval(enforceBadges, 3000);
 
     }
 
@@ -661,6 +903,27 @@ export default {
                 case "/trigifyx-capture.js":
 
                     return serveCapture(CAPTURE_JS);
+
+                case "/api/embed":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleEmbed(
+                        request,
+                        env,
+                        ctx
+                    );
 
                 case "/api/submit":
 
@@ -988,6 +1251,82 @@ async function handleTestMessage(request, env, ctx) {
 }
 
 /* ============================================================
+   Handle Embed / Load Ping
+
+   Records that a token's capture script actually loaded on a
+   given origin. Used as a lightweight gate: a submission is only
+   accepted if a recent embed ping exists for that origin, so the
+   embed (and its "Powered by TrigifyX" badge) cannot simply be
+   removed from the page without breaking the service.
+============================================================ */
+
+// How long an embed ping stays valid (5 minutes).
+const EMBED_TTL_MS = 5 * 60 * 1000;
+
+async function readEmbedPing(firebaseBase, tokenKey, origin) {
+    try {
+        const res = await fetch(
+            firebaseBase + "/pub/" + tokenKey + "/embeds/" +
+                encodeURIComponent(origin) + ".json",
+            { headers: { "Accept": "application/json" } }
+        );
+        if (!res.ok) return 0;
+        const v = await res.json();
+        return (v && typeof v.ts === "number") ? v.ts : 0;
+    } catch {
+        return 0;
+    }
+}
+
+async function writeEmbedPing(firebaseBase, tokenKey, origin, ctx) {
+    const node = firebaseBase + "/pub/" + tokenKey + "/embeds/" +
+        encodeURIComponent(origin) + ".json";
+    try {
+        ctx.waitUntil(
+            fetch(node, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ ts: Date.now() })
+            }).catch(function () {})
+        );
+    } catch (_) { /* best-effort */ }
+}
+
+async function handleEmbed(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { accessToken, origin } = payload || {};
+    if (typeof accessToken !== "string" || accessToken.trim() === "") {
+        return json({ ok: false, error: "Missing accessToken" }, 400, env);
+    }
+    if (typeof origin !== "string" || origin.trim() === "") {
+        return json({ ok: false, error: "Missing origin" }, 400, env);
+    }
+
+    const trimmedToken = accessToken.trim();
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    // Best-effort record; never block the page on it.
+    await writeEmbedPing(firebaseBase, encodeURIComponent(trimmedToken), origin.trim(), ctx);
+
+    return json({ ok: true });
+}
+
+/* ============================================================
    Handle Form Submission
 ============================================================ */
 
@@ -1083,6 +1422,48 @@ async function handleSubmit(request, env, ctx) {
     const invalidTokenCheck = await checkInvalidToken(trimmedToken, ctx);
     if (invalidTokenCheck) {
         return invalidTokenCheck;
+    }
+
+    // --------------------------------------------------------
+    // Embed gate: require a recent load ping for this origin.
+    // This makes the embedded capture script (and its badge) a
+    // hard requirement — strip it and submissions are rejected.
+    //
+    // NOTE: Enforcement is opt-in via the Worker secret/env
+    // EMBED_GATE=on. It is OFF by default so the service keeps
+    // working until the Firebase rule for pub/{token}/embeds is
+    // added (see README). Turn it on only after that rule exists,
+    // otherwise every submission would be rejected.
+    // --------------------------------------------------------
+
+    const embedGateEnabled =
+        getEnv(env, "EMBED_GATE") === "on";
+
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    const requestOrigin =
+        request.headers.get("origin") ||
+        (page ? safeOrigin(page) : "");
+
+    if (embedGateEnabled && firebaseBase && requestOrigin) {
+
+        const pingTs = await readEmbedPing(
+            firebaseBase,
+            encodeURIComponent(trimmedToken),
+            requestOrigin
+        );
+
+        if (!pingTs || (Date.now() - pingTs) > EMBED_TTL_MS) {
+            return json(
+                {
+                    ok: false,
+                    error: "Embed not loaded on this origin. " +
+                           "Include the TrigifyX capture script on your page."
+                },
+                403,
+                env
+            );
+        }
+
     }
 
     // --------------------------------------------------------

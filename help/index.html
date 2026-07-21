@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Help — TrigifyX</title>
+  <link rel="stylesheet" href="help.css" />
+</head>
+<body>
+  <main class="wrap help-wrap">
+    <div class="card">
+      <div class="help-title">TrigifyX Help Center</div>
+      <div class="help-lead">Everything you need to connect your forms to Telegram in minutes.</div>
+    </div>
+
+    <div class="card help-section">
+      <h2>1. Getting Started</h2>
+      <p>TrigifyX lets you receive form submissions instantly in your Telegram chat. No backend required — just paste one script tag.</p>
+      <ul>
+        <li>Create an account on <a href="/"><code>trigifyx</code></a></li>
+        <li>Link your Telegram account with <a href="https://t.me/TrigifyXbot"><code>@TrigifyXbot</code></a></li>
+        <li>Copy the install snippet from your dashboard</li>
+        <li>Paste it before <code>&lt;/body&gt;</code> on every page with a form</li>
+      </ul>
+    </div>
+
+    <div class="card help-section">
+      <h2>2. How It Works</h2>
+      <p>When a visitor submits a form on your site, TrigifyX captures the data and forwards it to your Telegram chat. The service includes:</p>
+      <ul>
+        <li><strong>Automatic form detection</strong> — works with any HTML <code>&lt;form&gt;</code></li>
+        <li><strong>Offline queue</strong> — submissions are retried if the network drops</li>
+        <li><strong>Duplicate prevention</strong> — same submission is not sent twice</li>
+        <li><strong>Origin protection</strong> — only registered sites can use your token</li>
+        <li><strong>Rate limiting</strong> — prevents spam and abuse</li>
+        <li><strong>Secure infrastructure</strong> — built with redundancy and hardened routing</li>
+        <li><strong>Cloudflare-enabled security</strong> — DDoS protection, WAF, and secure access to the service</li>
+        <li><strong>GDPR & Privacy</strong> — no data is stored on our servers</li>
+        <li><strong>reCAPTCHA-enabled security</strong> — bot protection and verified authentication</li>
+      </ul>
+    </div>
+
+    <div class="card help-section">
+      <h2>Help Desk TrigifyX</h2>
+      <form id="contact-form" class="mt">
+        <label for="name">Name</label>
+        <input id="name" name="name" type="text" placeholder="Jane Doe" required />
+
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="you@site.com" required />
+
+        <label for="phone">Phone</label>
+        <input id="phone" name="phone" type="tel" placeholder="+1 555 000 0000" />
+
+        <label for="message">Message</label>
+        <textarea id="message" name="message" placeholder="How can we help?" required></textarea>
+
+        <label class="row" style="gap:8px;font-weight:400;color:var(--muted);">
+          <input type="checkbox" name="newsletter" value="yes" style="width:auto;" /> Subscribe to newsletter
+        </label>
+
+        <button class="btn block mt" type="submit">Send message</button>
+      </form>
+      <p id="result" class="muted center mt"></p>
+      <div id="rate-banner" class="rate-banner">⏳ Slow down — you've reached the limit. Please wait a moment and try again.</div>
+    </div>
+
+    <div class="card help-section">
+      <h2>4. Account & Security</h2>
+      <ul>
+        <li>Regenerate your access token anytime from the dashboard</li>
+        <li>Register all websites where you use the snippet</li>
+        <li>Enable <strong>Embed Gate</strong> in worker settings for stricter security</li>
+        <li>If your token is exposed, regenerate it immediately</li>
+      </ul>
+    </div>
+
+    <div class="card help-section">
+      <h2>5. Troubleshooting</h2>
+      <ul>
+        <li><strong>Not receiving messages?</strong> Make sure you started a chat with <a href="https://t.me/TrigifyXbot"><code>@TrigifyXbot</code></a> and copied the correct Chat ID.</li>
+        <li><strong>Badge not showing?</strong> Check that the script tag is placed before <code>&lt;/body&gt;</code> and that no ad blocker is interfering.</li>
+        <li><strong>Token blocked?</strong> Your token may have been exposed from an unregistered origin. Regenerate it from the dashboard.</li>
+      </ul>
+    </div>
+
+    <div class="card help-section">
+      <h2>6. Contact</h2>
+      <p>For support, contact <a href="mailto:fireflyindiainfo@gmail.com"><code>fireflyindiainfo@gmail.com</code></a> or open an issue on GitHub.</p>
+    </div>
+
+    <div class="help-footer">
+      <p>© 2026 <a href="/"><code>TrigifyX</code></a>. All rights reserved. Developed by <strong>Divyanshu Gupta</strong></p>
+    </div>
+  </main>
+
+  <!-- TrigifyX: paste before </body> on every page with a form -->
+  <script>
+    window.TRIGIFYX = {
+      accessToken: "446b54cfbdad0fd74a95c72e8450362ed15ec5b2be1d93267cf73bf0b15bd5e8027139d4",
+      endpoint: "https://trigifyx-worker.divyanshugupta415.workers.dev",
+    };
+  </script>
+  <script src="https://trigifyx-worker.divyanshugupta415.workers.dev/trigifyx-capture.js" defer></script>
+
+  <script>
+    (function () {
+      const MAX_PER_MINUTE = 2;
+      const WINDOW_MS = 60 * 1000;
+      let timestamps = [];
+
+      function now() {
+        return Date.now();
+      }
+
+      function prune() {
+        const cutoff = now() - WINDOW_MS;
+        while (timestamps.length && timestamps[0] < cutoff) {
+          timestamps.shift();
+        }
+      }
+
+      function canSubmit() {
+        prune();
+        return timestamps.length < MAX_PER_MINUTE;
+      }
+
+      function recordSubmit() {
+        timestamps.push(now());
+      }
+
+      const form = document.getElementById("contact-form");
+      const result = document.getElementById("result");
+      const rateBanner = document.getElementById("rate-banner");
+
+      if (form) {
+        form.addEventListener("submit", function () {
+          if (!canSubmit()) {
+            if (result) result.textContent = "";
+            if (rateBanner) rateBanner.classList.add("show");
+            setTimeout(function () {
+              if (rateBanner) rateBanner.classList.remove("show");
+            }, 4000);
+            return;
+          }
+
+          recordSubmit();
+          if (rateBanner) rateBanner.classList.remove("show");
+          if (result) {
+            result.textContent = "Submitting… your details are being sent to TrigifyXbot.";
+            setTimeout(function () { result.textContent = ""; }, 4000);
+          }
+        });
+      }
+    })();
+  </script>
+</body>
+</html>
