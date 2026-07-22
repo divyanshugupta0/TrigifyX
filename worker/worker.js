@@ -1821,15 +1821,19 @@ async function resolveDestination(data, env, ctx) {
         previous working behavior while adding the new features.
     -------------------------------------------------------- */
 
-    let ownerUid, profile, meta, pubTelegram, pubSiteUrl, pubSiteUrls;
+    let ownerUid, profile, meta, pubTelegram, pubTelegramChatId, pubSiteUrl, pubSiteUrls;
 
     try {
 
         // Fire all reads in parallel; missing nodes are tolerated.
-        const [telegramRes, uidRes, profileRes, metaRes, siteUrlRes, siteUrlsRes] =
+        const [telegramRes, telegramChatIdRes, uidRes, profileRes, metaRes, siteUrlRes, siteUrlsRes] =
             await Promise.all([
 
                 fetch(firebaseBase + "/pub/" + tokenKey + "/telegram.json", {
+                    headers: { "Accept": "application/json" }
+                }),
+
+                fetch(firebaseBase + "/pub/" + tokenKey + "/telegram_chat_id.json", {
                     headers: { "Accept": "application/json" }
                 }),
 
@@ -1861,6 +1865,12 @@ async function resolveDestination(data, env, ctx) {
         pubTelegram =
             (telegramValue && String(telegramValue).trim() !== "")
                 ? String(telegramValue).trim()
+                : "";
+
+        const telegramChatIdValue = telegramChatIdRes.ok ? await telegramChatIdRes.json() : null;
+        pubTelegramChatId =
+            (telegramChatIdValue && String(telegramChatIdValue).trim() !== "")
+                ? String(telegramChatIdValue).trim()
                 : "";
 
         // Resolve owner profile only if a uid node exists.
@@ -1921,10 +1931,12 @@ async function resolveDestination(data, env, ctx) {
 
     }
 
-    // chatId: prefer the old direct node, fall back to profile.telegram.
-    let telegram = pubTelegram;
-    if (!telegram && profile && profile.telegram) {
-        telegram = String(profile.telegram).trim();
+    // chatId: prefer numeric telegram_chat_id from the bot, fall back to
+    // the user's pasted telegram input (username or numeric id).
+    let telegram = pubTelegramChatId || pubTelegram || "";
+    if (!telegram && profile) {
+        const profileChatId = profile.telegram_chat_id || profile.telegram || "";
+        telegram = String(profileChatId).trim();
     }
 
     if (!telegram) {

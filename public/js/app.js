@@ -163,7 +163,7 @@ async function signUp(email, password, name, telegram) {
   const token = accessToken();
   const profile = {
     uid: "", email, name: name || "", telegram: telegram || "",
-    apiKey: apiKey(), accessToken: token, createdAt: Date.now(), plan: "free",
+    telegram_chat_id: "", apiKey: apiKey(), accessToken: token, createdAt: Date.now(), plan: "free",
     apiKeyIssued: false, siteUrl: ""
   };
   if (demoMode()) {
@@ -181,6 +181,7 @@ async function signUp(email, password, name, telegram) {
   // Public lookup node: token -> telegram (chat id never in the snippet).
   // Written as sub-paths so the public `verify` pings are not overwritten.
   await set(ref(db, "pub/" + token + "/telegram"), telegram || "");
+  await set(ref(db, "pub/" + token + "/telegram_chat_id"), "");
   await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
   return cred.user;
 }
@@ -662,14 +663,14 @@ function bindUI() {
     await withLoading($("#tg-save"), "Linking…", async () => {
       const p = await getProfile(currentUser);
       p.telegram = val;
+      if (/^\d+$/.test(val)) {
+        p.telegram_chat_id = val;
+      }
       await saveProfile(currentUser, p);
       const db = (window.__fb || {}).db;
       if (db && p.accessToken) {
-        // Write the telegram sub-path and keep uid in sync so the worker can
-        // resolve the token. siteUrl is mirrored on the public token node
-        // (if already set) so the worker can validate the submission origin
-        // without reading the private users/{uid} node.
         await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
+        await set(ref(db, "pub/" + p.accessToken + "/telegram_chat_id"), p.telegram_chat_id || "");
         await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
         await mirrorSitesToPub(p);
       }
@@ -797,27 +798,20 @@ function bindUI() {
 
       const db = (window.__fb || {}).db;
       if (db) {
-        // Write the new public token node.
         await set(ref(db, "pub/" + newToken + "/telegram"), p.telegram || "");
+        await set(ref(db, "pub/" + newToken + "/telegram_chat_id"), p.telegram_chat_id || "");
         await set(ref(db, "pub/" + newToken + "/uid"), p.uid);
-        // Carry the registered sites list over to the new token.
         await mirrorSitesToPub(p);
-        // Fresh token starts unblocked with no exposure history.
         try {
           await set(ref(db, "pub/" + newToken + "/meta"), {
             blocked: false,
             exposedChances: 0
           });
         } catch (_) {}
-        // Roll over: invalidate the old token's public node so it can no
-        // longer be used to deliver submissions. We clear the identifying
-        // children (telegram/uid/siteUrl/siteUrls) and mark it blocked rather
-        // than removing the parent node, because the Firebase rules only grant
-        // write on those children (not on pub/$token itself), so a parent
-        // remove would be denied.
         if (oldToken && oldToken !== newToken) {
           try {
             await set(ref(db, "pub/" + oldToken + "/telegram"), null);
+            await set(ref(db, "pub/" + oldToken + "/telegram_chat_id"), null);
             await set(ref(db, "pub/" + oldToken + "/uid"), null);
             await set(ref(db, "pub/" + oldToken + "/siteUrl"), null);
             await set(ref(db, "pub/" + oldToken + "/siteUrls"), null);
@@ -905,8 +899,13 @@ async function onLogin(u) {
   // Ensure the public lookup node exists (for the capture script).
   const db = (window.__fb || {}).db;
   if (db) {
-    await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
-    await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
+    const p = await getProfile(currentUser);
+    if (p && p.accessToken) {
+      await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
+      await set(ref(db, "pub/" + p.accessToken + "/telegram_chat_id"), p.telegram_chat_id || "");
+      await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
+      await mirrorSitesToPub(p);
+    }
     // Keep the registered sites mirrored to the public token node.
     await mirrorSitesToPub(p);
   }
