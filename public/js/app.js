@@ -161,8 +161,9 @@ async function signUp(email, password, name, telegram) {
   const auth = (window.__fb || {}).auth;
   const db = (window.__fb || {}).db;
   const token = accessToken();
+  const normalizedTelegram = (telegram || "").replace(/^@/, "");
   const profile = {
-    uid: "", email, name: name || "", telegram: telegram || "",
+    uid: "", email, name: name || "", telegram: normalizedTelegram,
     telegram_chat_id: "", apiKey: apiKey(), accessToken: token, createdAt: Date.now(), plan: "free",
     apiKeyIssued: false, siteUrl: ""
   };
@@ -178,7 +179,7 @@ async function signUp(email, password, name, telegram) {
     try { await updateProfile(cred.user, { displayName: name }); } catch (e) {}
   }
   await set(ref(db, "users/" + cred.user.uid), profile);
-  await set(ref(db, "pub/" + token + "/telegram"), telegram || "");
+  await set(ref(db, "pub/" + token + "/telegram"), normalizedTelegram);
   await set(ref(db, "pub/" + token + "/telegram_chat_id"), "");
   await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
   return cred.user;
@@ -235,15 +236,21 @@ async function mergeTokenMeta(p) {
   const db = (window.__fb || {}).db;
   if (!db) return;
   try {
-    const snap = await get(ref(db, "pub/" + p.accessToken + "/meta"));
-    const m = snap.val();
-    if (!m) return;
-    if (typeof m.submissionCount === "number") p.submissionCount = m.submissionCount;
-    if (typeof m.lastSubmissionAt !== "undefined") p.lastSubmissionAt = m.lastSubmissionAt;
-    if (typeof m.lastSubmissionPage !== "undefined") p.lastSubmissionPage = m.lastSubmissionPage;
-    if (typeof m.exposedChances === "number") p.exposedChances = m.exposedChances;
-    if (typeof m.lastExposureAt !== "undefined") p.lastExposureAt = m.lastExposureAt;
-    if (typeof m.blocked === "boolean") p.blocked = m.blocked;
+    const [metaSnap, tgChatSnap] = await Promise.all([
+      get(ref(db, "pub/" + p.accessToken + "/meta")),
+      get(ref(db, "pub/" + p.accessToken + "/telegram_chat_id"))
+    ]);
+    const m = metaSnap.val();
+    if (m) {
+      if (typeof m.submissionCount === "number") p.submissionCount = m.submissionCount;
+      if (typeof m.lastSubmissionAt !== "undefined") p.lastSubmissionAt = m.lastSubmissionAt;
+      if (typeof m.lastSubmissionPage !== "undefined") p.lastSubmissionPage = m.lastSubmissionPage;
+      if (typeof m.exposedChances === "number") p.exposedChances = m.exposedChances;
+      if (typeof m.lastExposureAt !== "undefined") p.lastExposureAt = m.lastExposureAt;
+      if (typeof m.blocked === "boolean") p.blocked = m.blocked;
+    }
+    const tgChat = tgChatSnap.val();
+    if (tgChat) p.telegram_chat_id = String(tgChat);
     window.__profile = p;
   } catch (_) { /* best-effort */ }
 }
@@ -934,7 +941,7 @@ function showProfileComplete(u, p) {
     if (!tg) return toast("Please enter your Telegram username or chat id");
     await withLoading($("#complete-save"), "Saving…", async () => {
       p.name = name;
-      p.telegram = tg;
+      p.telegram = (tg || "").replace(/^@/, "");
       await saveProfile(u, p);
       window.__profile = p;
       $("#complete-view").classList.add("hide");
