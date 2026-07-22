@@ -28,16 +28,31 @@ function appendSlash(path) {
 }
 
 async function saveChat(chat_id, username, linkedAt) {
-  const payload = { telegram_chat_id: String(chat_id), username: username || null, linkedAt: linkedAt || Date.now() };
+  const incoming = { telegram_chat_id: String(chat_id), username: username || null, linkedAt: linkedAt || Date.now() };
   if (db) {
-    await db.ref("tg/" + chat_id).set(payload);
+    const snap = await db.ref("tg/" + chat_id).once("value");
+    const existing = snap.val();
+    if (existing && existing.username === incoming.username) {
+      return;
+    }
+    await db.ref("tg/" + chat_id).set(incoming);
   } else if (FIREBASE_DB_URL) {
     const res = await fetch(appendSlash("tg/" + chat_id), {
+      method: "GET",
+      headers: { "Accept": "application/json" },
+    });
+    if (res.ok) {
+      const existing = await res.json();
+      if (existing && existing.username === incoming.username) {
+        return;
+      }
+    }
+    const put = await fetch(appendSlash("tg/" + chat_id), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(incoming),
     });
-    if (!res.ok) throw new Error("fb_save_" + res.status);
+    if (!put.ok) throw new Error("fb_save_" + put.status);
   }
 }
 
