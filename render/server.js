@@ -31,11 +31,10 @@ async function saveChat(chat_id, username, linkedAt) {
   const incoming = { telegram_chat_id: String(chat_id), username: username || null, linkedAt: linkedAt || Date.now() };
   if (db) {
     const snap = await db.ref("tg/" + chat_id).once("value");
-    const existing = snap.val();
-    if (existing && existing.username === incoming.username) {
+    if (snap.exists()) {
       return;
     }
-    await db.ref("tg/" + chat_id).set(incoming);
+    await db.ref("tg/" + chat_id).set(incoming, { merge: false });
   } else if (FIREBASE_DB_URL) {
     const res = await fetch(appendSlash("tg/" + chat_id), {
       method: "GET",
@@ -43,16 +42,13 @@ async function saveChat(chat_id, username, linkedAt) {
     });
     if (res.ok) {
       const existing = await res.json();
-      if (existing && existing.username === incoming.username) {
-        return;
-      }
+      if (existing) return;
     }
-    const put = await fetch(appendSlash("tg/" + chat_id), {
+    await fetch(appendSlash("tg/" + chat_id), {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(incoming),
     });
-    if (!put.ok) throw new Error("fb_save_" + put.status);
   }
 }
 
