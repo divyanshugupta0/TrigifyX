@@ -14,7 +14,7 @@ Telegram bot token stays 100% in Worker secrets.
 
 - `POST /api/submit` — body `{ accessToken, fields, page }`
 - `GET /health` — `{ ok: true }`
-- `GET /wakeup` — returns all linked Telegram chat ids from Firebase `tg/`
+- `POST /test-message` — test Telegram delivery
 
 ## Deploy
 

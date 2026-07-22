@@ -55,6 +55,7 @@ async function readChats() {
   return Object.entries(data).map(([id, v]) => ({ telegram_chat_id: id, username: v?.username || null, linkedAt: v?.linkedAt || null }));
 }
 
+app.get("/", (req, res) => res.json({ ok: true }));
 app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.post("/api/telegram/chat", async (req, res) => {
