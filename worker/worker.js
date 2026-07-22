@@ -1251,6 +1251,7 @@ async function handleTestMessage(request, env, ctx) {
 }
 
 /* ============================================================
+    Handle Embed / Load Ping
    Handle Embed / Load Ping
 
    Records that a token's capture script actually loaded on a

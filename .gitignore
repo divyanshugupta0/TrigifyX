@@ -5,10 +5,14 @@ node_modules/
 *.log
 .DS_Store
 
-# Node backend secrets / deps
-server/node_modules/
-server/.env
-server/firebase-service-account.json
+# Firebase service account private keys — NEVER commit these
+**/*firebase-adminsdk*.json
+**/*firebase-service-account*.json
+trigifyx-firebase-adminsdk-fbsvc-784ec6cb38.json
+
+# Deploy packages
+*.zip
+
 
 # Non-frontend (deployed separately): Python bot for cloud.tranger.xyz
 bot/
