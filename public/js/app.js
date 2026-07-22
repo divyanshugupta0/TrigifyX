@@ -178,8 +178,6 @@ async function signUp(email, password, name, telegram) {
     try { await updateProfile(cred.user, { displayName: name }); } catch (e) {}
   }
   await set(ref(db, "users/" + cred.user.uid), profile);
-  // Public lookup node: token -> telegram (chat id never in the snippet).
-  // Written as sub-paths so the public `verify` pings are not overwritten.
   await set(ref(db, "pub/" + token + "/telegram"), telegram || "");
   await set(ref(db, "pub/" + token + "/telegram_chat_id"), "");
   await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
@@ -205,7 +203,7 @@ async function signInWithGoogle() {
   if (demoMode()) {
     const u = { uid: uid(), email: "demo.google@trigifyx.app", name: "Google User", telegram: "" };
     const prof = {
-      uid: u.uid, email: u.email, name: u.name, telegram: "", apiKey: apiKey(),
+      uid: u.uid, email: u.email, name: u.name, telegram: "", telegram_chat_id: "", apiKey: apiKey(),
       createdAt: Date.now(), plan: "free", apiKeyIssued: false, siteUrl: ""
     };
     Demo.saveUser(u, prof);
@@ -285,12 +283,9 @@ function renderProfile(p) {
   const hasToken = !!(p.accessToken && p.accessToken.trim());
   $("#apikey-revealed").classList.toggle("hide", !hasToken);
 
-  // Telegram card always shows the instructions + chat id input.
-  // (No separate "linked" state — the chat id is editable any time.)
-  const linked = !!p.telegram;
+  const linked = !!p.telegram_chat_id;
   $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
   $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
-  $("#tg-input").value = p.telegram || "";
 
   // Install snippet shows once the token has been issued — persisted,
   // so it doesn't hide itself again on the next visit.
@@ -656,26 +651,21 @@ function bindUI() {
     showAuth();
   };
 
-  $("#tg-save").onclick = async () => {
-    const val = $("#tg-input").value.trim();
-    if (!val) return toast("Enter your Telegram chat id");
-    if (!isValidTelegram(val)) return toast("Enter a numeric Chat ID or a @username");
-    await withLoading($("#tg-save"), "Linking…", async () => {
+  $("#tg-check").onclick = async () => {
+    await withLoading($("#tg-check"), "Checking…", async () => {
       const p = await getProfile(currentUser);
-      p.telegram = val;
-      if (/^\d+$/.test(val)) {
-        p.telegram_chat_id = val;
-      }
-      await saveProfile(currentUser, p);
-      const db = (window.__fb || {}).db;
-      if (db && p.accessToken) {
-        await set(ref(db, "pub/" + p.accessToken + "/telegram"), val);
-        await set(ref(db, "pub/" + p.accessToken + "/telegram_chat_id"), p.telegram_chat_id || "");
-        await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
-        await mirrorSitesToPub(p);
-      }
+      if (!p) return toast("Profile not found");
       renderProfile(p);
-      toast("Telegram account linked");
+      const chatId = p.telegram_chat_id || "";
+      if (chatId) {
+        $("#tg-status").className = "badge ok";
+        $("#tg-status").textContent = "Linked";
+        toast("Telegram linked: " + chatId);
+      } else {
+        $("#tg-status").className = "badge warn";
+        $("#tg-status").textContent = "Not Linked";
+        toast("Not linked yet — send /start to @TrigifyXbot in Telegram");
+      }
     });
   };
 

@@ -152,7 +152,7 @@
                         <input id="auth-name" type="text" placeholder="John Doe">
 
                         <label>Telegram Username</label>
-                        <input id="auth-tg" type="text" placeholder="@username or Chat ID">
+                        <input id="auth-tg" type="text" placeholder="@username">
                     </div>
 
                     <label>Email Address</label>
@@ -372,10 +372,11 @@
 
                         <!-- STEP 2: TELEGRAM -->
                         <li id="telegram-card" class="card setup-step">
-                            <h2>Telegram Destination</h2>
+                            <h2>Connect Telegram</h2>
                             <p class="lead">
-                                Follow the steps below to get your Telegram Chat ID, then
-                                paste it here. This is where your form submissions are sent.
+                                Open <strong>@TrigifyXbot</strong> in Telegram and send
+                                <code>/start</code>. Your Telegram account will be linked
+                                automatically — no Chat ID needed.
                             </p>
 
                             <div id="tg-steps">
@@ -386,21 +387,14 @@
                                     </li>
                                     <li>
                                         <h3>Start the bot</h3>
-                                        <p>Tap the <code>/start</code> button or send <code>/start</code> to get your Chat ID.</p>
-                                    </li>
-                                    <li>
-                                        <h3>Copy your Chat ID</h3>
-                                        <p>The bot replies with your numeric Chat ID. Copy it and paste it below.</p>
+                                        <p>Send <code>/start</code> to link your account automatically.</p>
                                     </li>
                                 </ol>
                             </div>
 
-                            <label>Telegram Chat ID</label>
-                            <input id="tg-input" type="text" placeholder="123456789">
-
                             <div class="row mt">
-                                <span class="badge warn" id="tg-status">Not Linked</span>
-                                <button class="btn" id="tg-save">Save &amp; Link</button>
+                                <span class="badge ok" id="tg-status">Not Linked</span>
+                                <button class="btn" id="tg-check">Check Link</button>
                             </div>
                         </li>
 
@@ -535,7 +529,7 @@
                             <ul class="tips">
                                 <li>Add the snippet to every page with a form.</li>
                                 <li>The bot works with any HTML <code>&lt;form&gt;</code> — no extra setup.</li>
-                                <li>Open <strong>@TrigifyXbot</strong> to get your Chat ID again.</li>
+                                <li>Open <strong>@TrigifyXbot</strong> and send <code>/start</code> to link Telegram.</li>
                                 <li>Regenerate your API key from Account Information if a site is compromised.</li>
                             </ul>
                         </div>
