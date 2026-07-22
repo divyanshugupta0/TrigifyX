@@ -32,7 +32,7 @@ app.post("/api/telegram/chat", async (req, res) => {
     if (!telegram_chat_id) return res.status(400).json({ ok: false, error: "telegram_chat_id required" });
     if (!username) return res.status(400).json({ ok: false, error: "username required" });
 
-    const telegram = String(username).trim().toLowerCase();
+    const telegram = String(username).replace(/^@/, "").trim().toLowerCase();
     let matched = false;
     let token = null;
 
