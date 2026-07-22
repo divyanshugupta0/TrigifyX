@@ -1,0 +1,63 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid"
+      }
+    },
+
+    "pub": {
+      "$token": {
+        ".read": true,
+
+        "telegram": {
+          ".write": true,
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+
+        "telegram_chat_id": {
+          ".write": true,
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+
+        "uid": {
+          ".write": true,
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+
+        "siteUrl": {
+          ".write": true,
+          ".validate": "newData.isString() || !newData.exists()"
+        },
+
+        "siteUrls": {
+          ".write": true,
+          ".validate": "newData.hasChildren() || !newData.exists()",
+          "$site": {
+            ".validate": "newData.isString()"
+          }
+        },
+
+        "embeds": {
+          ".write": true,
+          "$origin": {
+            ".validate": "newData.hasChild('ts') && newData.child('ts').isNumber()"
+          }
+        },
+
+        "meta": {
+          ".write": true,
+          ".validate": "newData.hasChildren() || !newData.exists()"
+        }
+      }
+    },
+
+    "tg": {
+      "$chat_id": {
+        ".read": true,
+        ".write": true
+      }
+    }
+  }
+}
