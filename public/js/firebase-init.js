@@ -99,7 +99,7 @@ let analytics = null;
 try { analytics = getAnalytics(app); } catch (e) {}
 
 window.__fb = { app, auth, db, analytics };
-window.__fb.appCheckEnabled = !!siteKey;
+window.__fb.appCheckEnabled = !!(window.__ENV__.appCheckSiteKey || "");
 
 // Expose an on-demand App Check token fetch so the UI can show a "Verifying…"
 // status when the user submits the auth form. Because reCAPTCHA v3 is
