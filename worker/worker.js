@@ -948,6 +948,8 @@ export default {
 
                 case "/api/telegram/chat":
 
+                    console.log("[worker] /api/telegram/chat hit", request.method, request.headers.get("content-type"));
+
                     if (request.method !== "POST") {
 
                         return json(
@@ -1200,6 +1202,8 @@ function cors(response, env) {
 
 async function handleTelegramChat(request, env, ctx) {
 
+    console.log("[worker] handleTelegramChat called, headers:", Object.fromEntries(request.headers.entries()));
+
     const contentType = request.headers.get("content-type") || "";
     if (!contentType.includes("application/json")) {
         return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
@@ -1212,6 +1216,7 @@ async function handleTelegramChat(request, env, ctx) {
         return json({ ok: false, error: "Invalid JSON body" }, 400, env);
     }
 
+    console.log("[worker] handleTelegramChat payload:", JSON.stringify(payload));
     const { telegram_chat_id, username } = payload || {};
     if (!telegram_chat_id) {
         return json({ ok: false, error: "telegram_chat_id required" }, 400, env);
