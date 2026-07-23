@@ -737,14 +737,17 @@ function bindUI() {
         }
       }
 
-      renderProfile(await getProfile(currentUser));
       if (linked) {
         $("#tg-status").className = "badge ok";
         $("#tg-status").textContent = "Linked";
+        const accessSection = $("#access-code-section");
+        if (accessSection) accessSection.classList.add("hide");
         toast("Telegram linked: " + chatId);
       } else {
         $("#tg-status").className = "badge warn";
         $("#tg-status").textContent = "Not Linked";
+        const accessSection = $("#access-code-section");
+        if (accessSection) accessSection.classList.remove("hide");
         toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
       }
     } finally {
