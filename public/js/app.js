@@ -1026,8 +1026,12 @@ function showProfileComplete(u, p) {
 
 /* ---------- Boot ---------- */
 function boot() {
-  bindUI();
-  switchTab("up");
+  try {
+    bindUI();
+    switchTab("up");
+  } catch (e) {
+    console.error("[app] bindUI failed:", e);
+  }
   const auth = (window.__fb || {}).auth;
   if (!demoMode() && auth) {
     onAuthStateChanged(auth, async (u) => {
@@ -1043,4 +1047,7 @@ if ((window.__fb || {}).auth) {
   boot();
 } else {
   window.addEventListener("fb-ready", boot);
+  setTimeout(() => {
+    if ((window.__fb || {}).auth) boot();
+  }, 1500);
 }
