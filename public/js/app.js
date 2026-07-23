@@ -719,22 +719,29 @@ function bindUI() {
     let linked = false;
     try {
       await new Promise((resolve) => setTimeout(resolve, 5000));
-      const p = await getProfile(currentUser);
-      if (!p) {
-        toast("Profile not found");
-        return;
-      }
-      renderProfile(p);
-      const chatId = p.telegram_chat_id || "";
-      if (chatId) {
-        $("#tg-status").className = "badge ok";
-        $("#tg-status").textContent = "Linked";
-        linked = true;
-        toast("Telegram linked: " + chatId);
-      } else {
-        $("#tg-status").className = "badge warn";
-        $("#tg-status").textContent = "Not Linked";
-        toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const p = await getProfile(currentUser);
+        if (!p) {
+          toast("Profile not found");
+          return;
+        }
+        renderProfile(p);
+        const chatId = p.telegram_chat_id || "";
+        if (chatId) {
+          $("#tg-status").className = "badge ok";
+          $("#tg-status").textContent = "Linked";
+          linked = true;
+          toast("Telegram linked: " + chatId);
+          break;
+        }
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        } else {
+          $("#tg-status").className = "badge warn";
+          $("#tg-status").textContent = "Not Linked";
+          toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
+        }
       }
     } finally {
       btn.classList.remove("spinning");
