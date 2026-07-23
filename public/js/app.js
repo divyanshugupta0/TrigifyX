@@ -234,6 +234,12 @@ async function saveProfile(u, p) {
   if (demoMode()) return Demo.saveProfile(u.uid, p);
   return set(ref(db, "users/" + u.uid), p);
 }
+async function clearUsedAccessCode(u, p) {
+  if (!p) return;
+  p._accessCode = null;
+  p._accessCodeExpiresAt = null;
+  await saveProfile(u, p);
+}
 
 // Merge the worker-written bookkeeping from pub/{token}/meta into the
 // profile object. This node is readable by the (unauthenticated) client
@@ -742,6 +748,11 @@ function bindUI() {
         $("#tg-status").textContent = "Linked";
         const accessSection = $("#access-code-section");
         if (accessSection) accessSection.classList.add("hide");
+        const fresh = await getProfile(currentUser);
+        if (fresh) {
+          await clearUsedAccessCode(currentUser, fresh);
+          renderProfile(fresh);
+        }
         toast("Telegram linked: " + chatId);
       } else {
         $("#tg-status").className = "badge warn";
