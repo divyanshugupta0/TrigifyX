@@ -1233,17 +1233,22 @@ async function handleTelegramChat(request, env, ctx) {
 
     let token = null;
     try {
-        const url = firebaseBase + "/pub.json?orderBy=\"telegram\"&equalTo=\"" + encodeURIComponent(telegram) + "\"&limitToFirst=1";
-        const resp = await fetch(url, { headers: { "Accept": "application/json" } });
+        const firebaseQuery = firebaseBase + "/pub.json?orderBy=\"telegram\"&equalTo=\"" + encodeURIComponent(telegram) + "\"&limitToFirst=1";
+        console.log("[worker] Firebase query:", firebaseQuery);
+        const resp = await fetch(firebaseQuery, { headers: { "Accept": "application/json" } });
+        console.log("[worker] Firebase status:", resp.status);
         if (resp.ok) {
             const data = await resp.json();
-            if (data) {
+            console.log("[worker] Firebase data keys:", Object.keys(data || {}), "token:", token);
+            if (data && Object.keys(data).length > 0) {
                 token = Object.keys(data)[0];
             }
         }
     } catch {
         return json({ ok: false, error: "Firebase query failed" }, 502, env);
     }
+
+    console.log("[worker] resolved token:", token);
 
     if (!token) {
         return json({ ok: false, error: "no matching telegram link found" }, 404, env);
