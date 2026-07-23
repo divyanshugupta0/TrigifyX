@@ -161,7 +161,7 @@ async function signUp(email, password, name, telegram) {
   const auth = (window.__fb || {}).auth;
   const db = (window.__fb || {}).db;
   const token = accessToken();
-  const normalizedTelegram = (telegram || "").replace(/^@/, "");
+  const normalizedTelegram = (telegram || "").replace(/^@/, "").trim().toLowerCase();
   const profile = {
     uid: "", email, name: name || "", telegram: normalizedTelegram,
     telegram_chat_id: "", apiKey: apiKey(), accessToken: token, createdAt: Date.now(), plan: "free",
@@ -795,7 +795,8 @@ function bindUI() {
 
       const db = (window.__fb || {}).db;
       if (db) {
-        await set(ref(db, "pub/" + newToken + "/telegram"), p.telegram || "");
+        p.telegram = (p.telegram || "").replace(/^@/, "").trim().toLowerCase();
+        await set(ref(db, "pub/" + newToken + "/telegram"), p.telegram);
         await set(ref(db, "pub/" + newToken + "/telegram_chat_id"), p.telegram_chat_id || "");
         await set(ref(db, "pub/" + newToken + "/uid"), p.uid);
         await mirrorSitesToPub(p);
@@ -898,7 +899,8 @@ async function onLogin(u) {
   if (db) {
     const p = await getProfile(currentUser);
     if (p && p.accessToken) {
-      await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram || "");
+      p.telegram = (p.telegram || "").replace(/^@/, "").trim().toLowerCase();
+      await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram);
       await set(ref(db, "pub/" + p.accessToken + "/telegram_chat_id"), p.telegram_chat_id || "");
       await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
       await mirrorSitesToPub(p);
@@ -941,7 +943,7 @@ function showProfileComplete(u, p) {
     if (!tg) return toast("Please enter your Telegram username or chat id");
     await withLoading($("#complete-save"), "Saving…", async () => {
       p.name = name;
-      p.telegram = (tg || "").replace(/^@/, "");
+      p.telegram = (tg || "").replace(/^@/, "").trim().toLowerCase();
       await saveProfile(u, p);
       window.__profile = p;
       $("#complete-view").classList.add("hide");
