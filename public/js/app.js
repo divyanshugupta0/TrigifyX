@@ -60,9 +60,6 @@ function apiKey() {
   const r = () => Math.random().toString(36).slice(2);
   return "tgx_" + r() + r() + r();
 }
-// Un-guessable per-user access token embedded in the public snippet.
-// Lets the capture script fetch the user's telegram from Firebase without
-// exposing it in the page source.
 function accessToken() {
   const c = globalThis.crypto || globalThis.msCrypto;
   if (c && c.getRandomValues) {
@@ -73,6 +70,9 @@ function accessToken() {
   let s = "";
   for (let i = 0; i < 72; i++) s += Math.floor(Math.random() * 16).toString(16);
   return s;
+}
+function accessCode() {
+  return Math.floor(10000 + Math.random() * 90000).toString();
 }
 function toast(msg) {
   const t = $("#toast");
@@ -293,6 +293,39 @@ function renderProfile(p) {
   const linked = !!p.telegram_chat_id;
   $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
   $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
+
+  if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
+    const display = $("#access-code-display");
+    const timer = $("#access-code-timer");
+    if (display && timer) {
+      display.textContent = p._accessCode;
+      display.classList.remove("hide");
+    }
+  }
+
+  if (!window.__accessCodeTimer) {
+    window.__accessCodeTimer = setInterval(() => {
+      const p = currentProfile();
+      if (!p || !p._accessCodeExpiresAt || !p._accessCode) {
+        const timer = $("#access-code-timer");
+        const display = $("#access-code-display");
+        if (timer) timer.textContent = "0:00";
+        if (display) display.classList.add("hide");
+        return;
+      }
+      const remaining = Math.max(0, Math.floor((p._accessCodeExpiresAt - Date.now()) / 1000));
+      const m = Math.floor(remaining / 60).toString().padStart(2, "0");
+      const s = (remaining % 60).toString().padStart(2, "0");
+      const timerEl = $("#access-code-timer");
+      const displayEl = $("#access-code-display");
+      if (timerEl) timerEl.textContent = m + ":" + s;
+      if (remaining <= 0) {
+        if (displayEl) displayEl.classList.add("hide");
+        window.__accessCode = null;
+        window.__accessCodeExpiresAt = null;
+      }
+    }, 1000);
+  }
 
   // Install snippet shows once the token has been issued — persisted,
   // so it doesn't hide itself again on the next visit.
@@ -671,14 +704,34 @@ function bindUI() {
       } else {
         $("#tg-status").className = "badge warn";
         $("#tg-status").textContent = "Not Linked";
-        toast("Not linked yet — send /start to @TrigifyXbot in Telegram");
+        toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
       }
+    });
+  };
+
+  $("#regen-access-code").onclick = async () => {
+    await withLoading($("#regen-access-code"), "Refreshing…", async () => {
+      const p = await getProfile(currentUser);
+      const db = (window.__fb || {}).db;
+      if (!db || !p || !p.accessToken) return toast("Access token not ready");
+      const code = accessCode();
+      p._accessCode = code;
+      p._accessCodeExpiresAt = Date.now() + 5 * 60 * 1000;
+      try {
+        await set(ref(db, "accesscode/" + code), {
+          token: p.accessToken,
+          ttl: Date.now(),
+          expiresAt: p._accessCodeExpiresAt,
+        });
+      } catch (_) {}
+      renderProfile(p);
+      toast("New access code generated");
     });
   };
 
   // Add a website to the account's registered sites list. The token accepts
   // submissions from any registered origin. Origins are stored (scheme + host
-  // + port) so they match the worker's origin-based site authentication
+  // + port) so the worker's origin-based site authentication
   // regardless of any path.
   $("#site-save").onclick = async () => {
     const raw = $("#site-url").value.trim();
@@ -918,6 +971,21 @@ async function onLogin(u) {
     await mergeTokenMeta(fresh);
     renderProfile(fresh);
   }, 8000);
+
+  const db = (window.__fb || {}).db;
+  if (db && p.accessToken) {
+    const code = accessCode();
+    p._accessCode = code;
+    p._accessCodeExpiresAt = Date.now() + 5 * 60 * 1000;
+    try {
+      await set(ref(db, "accesscode/" + code), {
+        token: p.accessToken,
+        ttl: Date.now(),
+        expiresAt: p._accessCodeExpiresAt,
+      });
+    } catch (_) {}
+  }
+
   // If a Google/SSO user is missing required details, force profile completion.
   const missing = !p.name || !p.telegram;
   if (missing) {

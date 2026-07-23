@@ -59,6 +59,14 @@
         ".read": true,
         ".write": true
       }
+    },
+
+    "accesscode": {
+      "$code": {
+        ".read": true,
+        ".write": true,
+        ".validate": "newData.hasChild('token') && newData.child('token').isString() && newData.hasChild('expiresAt') && newData.child('expiresAt').isNumber()"
+      }
     }
   }
 }

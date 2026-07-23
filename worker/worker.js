@@ -969,6 +969,27 @@ export default {
                         ctx
                     );
 
+                case "/api/telegram/config":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleTelegramConfig(
+                        request,
+                        env,
+                        ctx
+                    );
+
                 case "/test-message":
 
                     if (request.method !== "POST") {
@@ -1261,6 +1282,77 @@ async function handleTelegramChat(request, env, ctx) {
     });
 
     console.log("[worker] matched telegram -> token:", token, "chat_id:", telegram_chat_id);
+    return new Response(null, { status: 204 });
+}
+
+/* ============================================================
+    Handle Telegram Config via Access Code
+============================================================ */
+
+async function handleTelegramConfig(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { chat_id, access_code } = payload || {};
+    if (!chat_id) {
+        return json({ ok: false, error: "chat_id required" }, 400, env);
+    }
+    if (!access_code) {
+        return json({ ok: false, error: "access_code required" }, 400, env);
+    }
+
+    const code = String(access_code).trim();
+    if (!/^\d{5}$/.test(code)) {
+        return json({ ok: false, error: "access_code must be 5 digits" }, 400, env);
+    }
+
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    let token = null;
+    try {
+        const codeUrl = firebaseBase + "/accesscode/" + encodeURIComponent(code) + ".json";
+        const codeResp = await fetch(codeUrl, { headers: { "Accept": "application/json" } });
+        if (!codeResp.ok) {
+            return json({ ok: false, error: "Invalid access code" }, 404, env);
+        }
+        const codeData = await codeResp.json();
+        if (!codeData || typeof codeData.token !== "string" || !codeData.token) {
+            return json({ ok: false, error: "Invalid access code" }, 404, env);
+        }
+        if (typeof codeData.expiresAt === "number" && Date.now() > codeData.expiresAt) {
+            return json({ ok: false, error: "Access code expired" }, 410, env);
+        }
+        token = codeData.token;
+    } catch {
+        return json({ ok: false, error: "Firebase access code lookup failed" }, 502, env);
+    }
+
+    await fetch(firebaseBase + "/pub/" + encodeURIComponent(token) + "/telegram_chat_id.json", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(String(chat_id)),
+    });
+
+    ctx.waitUntil(
+        fetch(firebaseBase + "/accesscode/" + encodeURIComponent(code) + ".json", {
+            method: "DELETE",
+        }).catch(function () {})
+    );
+
+    console.log("[worker] access_code -> token:", token, "chat_id:", chat_id);
     return new Response(null, { status: 204 });
 }
 

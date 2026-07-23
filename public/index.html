@@ -375,8 +375,7 @@
                             <h2>Connect Telegram</h2>
                             <p class="lead">
                                 Open <strong>@TrigifyXbot</strong> in Telegram and send
-                                <code>/start</code>. Your Telegram account will be linked
-                                automatically — no Chat ID needed.
+                                <code>/config</code>, then paste the 5-digit access code shown below.
                             </p>
 
                             <div id="tg-steps">
@@ -386,8 +385,8 @@
                                         <p>Search for <strong>@TrigifyXbot</strong> and open the chat.</p>
                                     </li>
                                     <li>
-                                        <h3>Start the bot</h3>
-                                        <p>Send <code>/start</code> to link your account automatically.</p>
+                                        <h3>Enter access code</h3>
+                                        <p>Send <code>/config</code> and paste the code shown below.</p>
                                     </li>
                                 </ol>
                             </div>
@@ -395,6 +394,12 @@
                             <div class="row mt">
                                 <span class="badge ok" id="tg-status">Not Linked</span>
                                 <button class="btn" id="tg-check">Check Link</button>
+                            </div>
+
+                            <div class="row mt">
+                                <span class="muted">Access code (expires in <span id="access-code-timer">5:00</span>):</span>
+                                <code id="access-code-display">—</code>
+                                <button class="btn ghost" id="regen-access-code">Refresh</button>
                             </div>
                         </li>
 
