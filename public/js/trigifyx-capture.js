@@ -159,7 +159,7 @@
   function attach(form) {
     if (form.__trigifyx) return;
     form.__trigifyx = true;
-    form.addEventListener("submit", function () {
+    form.addEventListener("submit", function (e) {
       try { submit(form, e); } catch (err) { console.warn("[TrigifyX]", err); }
     });
   }
