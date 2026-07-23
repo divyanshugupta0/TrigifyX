@@ -704,19 +704,21 @@ function bindUI() {
   $("#tg-check").onclick = async () => {
     const btn = $("#tg-check");
     if (btn && btn.classList.contains("linked-success")) return;
+    if (btn && btn.classList.contains("spinning")) return;
 
     btn.classList.add("spinning");
     btn.disabled = true;
-
-    const timeout = setTimeout(() => {
-      btn.classList.remove("spinning");
-      btn.disabled = false;
-    }, 5000);
+    const originalText = btn.textContent;
+    btn.textContent = "Checking…";
 
     let linked = false;
-    await withLoading(btn, "Checking…", async () => {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
       const p = await getProfile(currentUser);
-      if (!p) return toast("Profile not found");
+      if (!p) {
+        toast("Profile not found");
+        return;
+      }
       renderProfile(p);
       const chatId = p.telegram_chat_id || "";
       if (chatId) {
@@ -729,17 +731,16 @@ function bindUI() {
         $("#tg-status").textContent = "Not Linked";
         toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
       }
-    });
-
-    clearTimeout(timeout);
-    if (linked) {
+    } finally {
       btn.classList.remove("spinning");
-      btn.classList.add("linked-success");
-      btn.textContent = "Linked Successfully";
-      btn.disabled = true;
-    } else {
-      btn.classList.remove("spinning");
-      btn.disabled = false;
+      if (linked) {
+        btn.classList.add("linked-success");
+        btn.textContent = "Linked Successfully";
+        btn.disabled = true;
+      } else {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
     }
   };
 
