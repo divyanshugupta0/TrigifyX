@@ -946,6 +946,27 @@ export default {
                         ctx
                     );
 
+                case "/api/telegram/chat":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleTelegramChat(
+                        request,
+                        env,
+                        ctx
+                    );
+
                 case "/test-message":
 
                     if (request.method !== "POST") {
@@ -1174,7 +1195,67 @@ function cors(response, env) {
 }
 
 /* ============================================================
-   Handle Test Message (dashboard "Send Test Message")
+    Handle Telegram Chat Link
+============================================================ */
+
+async function handleTelegramChat(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { telegram_chat_id, username } = payload || {};
+    if (!telegram_chat_id) {
+        return json({ ok: false, error: "telegram_chat_id required" }, 400, env);
+    }
+    if (!username) {
+        return json({ ok: false, error: "username required" }, 400, env);
+    }
+
+    const telegram = String(username).replace(/^@/, "").trim().toLowerCase();
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    let token = null;
+    try {
+        const url = firebaseBase + "/pub.json?orderBy=\"telegram\"&equalTo=\"" + encodeURIComponent(telegram) + "\"&limitToFirst=1";
+        const resp = await fetch(url, { headers: { "Accept": "application/json" } });
+        if (resp.ok) {
+            const data = await resp.json();
+            if (data) {
+                token = Object.keys(data)[0];
+            }
+        }
+    } catch {
+        return json({ ok: false, error: "Firebase query failed" }, 502, env);
+    }
+
+    if (!token) {
+        return json({ ok: false, error: "no matching telegram link found" }, 404, env);
+    }
+
+    await fetch(firebaseBase + "/pub/" + encodeURIComponent(token) + "/telegram_chat_id.json", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(String(telegram_chat_id)),
+    });
+
+    console.log("[worker] matched telegram -> token:", token, "chat_id:", telegram_chat_id);
+    return new Response(null, { status: 204 });
+}
+
+/* ============================================================
+    Handle Test Message (dashboard "Send Test Message")
 ============================================================ */
 
 async function handleTestMessage(request, env, ctx) {
