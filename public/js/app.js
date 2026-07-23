@@ -304,6 +304,11 @@ function renderProfile(p) {
   $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
   $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
 
+  const accessSection = $("#access-code-section");
+  if (accessSection) {
+    accessSection.classList.toggle("hide", linked);
+  }
+
   if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
     const display = $("#access-code-display");
     const timer = $("#access-code-timer");
