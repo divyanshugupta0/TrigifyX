@@ -17,7 +17,8 @@ import {
   onAuthStateChanged,
   updateProfile,
   GoogleAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  deleteUser
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
 import {
   ref,
@@ -178,10 +179,17 @@ async function signUp(email, password, name, telegram) {
   if (name) {
     try { await updateProfile(cred.user, { displayName: name }); } catch (e) {}
   }
-  await set(ref(db, "users/" + cred.user.uid), profile);
-  await set(ref(db, "pub/" + token + "/telegram"), normalizedTelegram);
-  await set(ref(db, "pub/" + token + "/telegram_chat_id"), "");
-  await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
+  try {
+    await set(ref(db, "users/" + cred.user.uid), profile);
+    await set(ref(db, "pub/" + token + "/telegram"), normalizedTelegram);
+    await set(ref(db, "pub/" + token + "/telegram_chat_id"), "");
+    await set(ref(db, "pub/" + token + "/uid"), cred.user.uid);
+  } catch (writeErr) {
+    console.error("[signUp] profile write failed:", writeErr);
+    try { await signOut(auth); } catch (_) {}
+    try { await deleteUser(cred.user); } catch (_) {}
+    throw new Error("Failed to save profile. Please try again.");
+  }
   return cred.user;
 }
 
@@ -952,7 +960,6 @@ async function onLogin(u) {
   // Ensure the public lookup node exists (for the capture script).
   const db = (window.__fb || {}).db;
   if (db) {
-    const p = await getProfile(currentUser);
     if (p && p.accessToken) {
       p.telegram = (p.telegram || "").replace(/^@/, "").trim().toLowerCase();
       await set(ref(db, "pub/" + p.accessToken + "/telegram"), p.telegram);
@@ -1025,7 +1032,10 @@ function showProfileComplete(u, p) {
 }
 
 /* ---------- Boot ---------- */
+let booted = false;
 function boot() {
+  if (booted) return;
+  booted = true;
   try {
     bindUI();
     switchTab("up");
