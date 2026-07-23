@@ -981,7 +981,7 @@ async function onLogin(u) {
     renderProfile(fresh);
   }, 8000);
 
-  const db = (window.__fb || {}).db;
+
   if (db && p.accessToken) {
     const code = accessCode();
     p._accessCode = code;
