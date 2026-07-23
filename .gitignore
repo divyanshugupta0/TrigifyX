@@ -8,7 +8,7 @@ node_modules/
 # Firebase service account private keys — NEVER commit these
 **/*firebase-adminsdk*.json
 **/*firebase-service-account*.json
-trigifyx-firebase-adminsdk-fbsvc-784ec6cb38.json
+trigifyx-service-account.json
 
 # Deploy packages
 *.zip
