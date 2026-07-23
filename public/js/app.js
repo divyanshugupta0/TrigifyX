@@ -702,7 +702,19 @@ function bindUI() {
   };
 
   $("#tg-check").onclick = async () => {
-    await withLoading($("#tg-check"), "Checking…", async () => {
+    const btn = $("#tg-check");
+    if (btn && btn.classList.contains("linked-success")) return;
+
+    btn.classList.add("spinning");
+    btn.disabled = true;
+
+    const timeout = setTimeout(() => {
+      btn.classList.remove("spinning");
+      btn.disabled = false;
+    }, 5000);
+
+    let linked = false;
+    await withLoading(btn, "Checking…", async () => {
       const p = await getProfile(currentUser);
       if (!p) return toast("Profile not found");
       renderProfile(p);
@@ -710,6 +722,7 @@ function bindUI() {
       if (chatId) {
         $("#tg-status").className = "badge ok";
         $("#tg-status").textContent = "Linked";
+        linked = true;
         toast("Telegram linked: " + chatId);
       } else {
         $("#tg-status").className = "badge warn";
@@ -717,6 +730,17 @@ function bindUI() {
         toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
       }
     });
+
+    clearTimeout(timeout);
+    if (linked) {
+      btn.classList.remove("spinning");
+      btn.classList.add("linked-success");
+      btn.textContent = "Linked Successfully";
+      btn.disabled = true;
+    } else {
+      btn.classList.remove("spinning");
+      btn.disabled = false;
+    }
   };
 
   $("#regen-access-code").onclick = async () => {

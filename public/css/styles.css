@@ -678,7 +678,49 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
 .btn.small{ padding:8px 14px; font-size:13px; flex:none; border-radius:10px; }
 
 /* ==========================================================================
-   ACCOUNT SUMMARY / DISABLED BUTTON (test message trial limit)
+   TG CHECK BUTTON SPINNING + LINKED SUCCESS
+========================================================================== */
+@keyframes tgx-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.btn.spinning {
+  position: relative;
+  pointer-events: none;
+}
+.btn.spinning::before {
+  content: "";
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: tgx-spin 0.7s linear infinite;
+}
+.btn.linked-success {
+  background: #16A34A !important;
+  color: #fff !important;
+  cursor: default !important;
+  pointer-events: none;
+  box-shadow: 0 0 0 0 rgba(22,163,74,.4) !important;
+  opacity: 1 !important;
+}
+.btn.linked-success::before {
+  content: "✓";
+  display: inline-block;
+  margin-right: 8px;
+  color: #fff;
+  animation: none;
+  border: none;
+  width: auto;
+  height: auto;
+}
+
+/* ==========================================================================
+    ACCOUNT SUMMARY / DISABLED BUTTON (test message trial limit)
 ========================================================================== */
 .kv-group{ margin-top:6px; }
 .kv-group .kv:first-child{
