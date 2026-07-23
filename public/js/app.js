@@ -257,12 +257,14 @@ async function mergeTokenMeta(p) {
 
 /* ---------- UI rendering ---------- */
 function showAuth() {
+  console.log("[app] showAuth");
   $("#auth-view").classList.remove("hide");
   $("#app-view").classList.add("hide");
   $("#profile-menu").classList.add("hide");
   $("#profile-menu").classList.remove("open");
 }
 function showApp() {
+  console.log("[app] showApp");
   $("#auth-view").classList.add("hide");
   $("#app-view").classList.remove("hide");
   $("#profile-menu").classList.remove("hide");
