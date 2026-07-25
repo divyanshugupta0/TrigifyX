@@ -1594,22 +1594,37 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
 .app-loader-inner {
   text-align: center;
 }
+.app-loader-logo-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 22px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #2563EB, #7C3AED, #EC4899);
+  padding: 2.5px;
+  animation: loaderBorderSpin 2.4s linear infinite;
+}
 .app-loader-logo {
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 24px;
-  border-radius: 20px;
+  width: 100%;
+  height: 100%;
+  border-radius: 21px;
   background: var(--surface);
-  box-shadow: var(--shadow);
-  animation: loaderPulse 2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-loader-logo img {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
 }
 .app-loader-spinner {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 2.5px solid var(--border-soft);
   border-top-color: var(--accent);
   border-radius: 50%;
-  margin: 0 auto 18px;
+  margin: 0 auto 16px;
   animation: spin .8s linear infinite;
 }
 .app-loader-text {
@@ -1619,6 +1634,9 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
   letter-spacing: 0.2px;
 }
 
+@keyframes loaderBorderSpin {
+  to { transform: rotate(360deg); }
+}
 @keyframes loaderPulse {
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.05); opacity: .9; }
