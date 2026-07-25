@@ -714,20 +714,20 @@ function renderSecurityAlerts(p) {
   const issueBtn = $("#sec-issue-apikey-btn");
 
   if (securityApiKeyIssued && securityApiKey) {
-    apikeyNotIssued.classList.remove("active");
-    apikeyOtpSection.classList.remove("active");
-    apikeyIssued.classList.add("active");
+    apikeyNotIssued.classList.add("hide");
+    apikeyOtpSection.classList.add("hide");
+    apikeyIssued.classList.remove("hide");
     $("#sec-apikey-display").textContent = securityApiKey;
     $("#sec-disp-apikey-status").innerHTML = '<span class="badge ok">Issued</span>';
   } else if (window.__securityOtpPending) {
-    apikeyNotIssued.classList.remove("active");
-    apikeyOtpSection.classList.add("active");
-    apikeyIssued.classList.remove("active");
+    apikeyNotIssued.classList.add("hide");
+    apikeyOtpSection.classList.remove("hide");
+    apikeyIssued.classList.add("hide");
     $("#sec-disp-apikey-status").innerHTML = '<span class="badge warn">Pending OTP</span>';
   } else {
-    apikeyNotIssued.classList.add("active");
-    apikeyOtpSection.classList.remove("active");
-    apikeyIssued.classList.remove("active");
+    apikeyNotIssued.classList.remove("hide");
+    apikeyOtpSection.classList.add("hide");
+    apikeyIssued.classList.add("hide");
     $("#sec-disp-apikey-status").innerHTML = '<span class="badge warn">Not Issued</span>';
   }
 
