@@ -1371,7 +1371,6 @@ function bindUI() {
   $("#msg-copy-snippet").onclick = () => copy(window.__lastSnippet || "", $("#msg-copy-snippet"));
   $("#msg-copy-snippet-2").onclick = () => copy(window.__lastSnippet || "", $("#msg-copy-snippet-2"));
   $("#msg-test-msg-btn").onclick = sendTestMessage;
-  $("#msg-test-msg-btn-2").onclick = sendTestMessage;
 
   const refreshFinish = () => {
     const p = currentProfile();
