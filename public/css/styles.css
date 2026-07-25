@@ -1572,3 +1572,57 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
   font-size: 12px;
   font-family: "SF Mono", "Fira Code", "Courier New", monospace;
 }
+
+/* ==========================================================================
+   LOADER
+================================================================= */
+.app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity .25s ease, visibility .25s ease;
+}
+.app-loader.hide {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.app-loader-inner {
+  text-align: center;
+}
+.app-loader-logo {
+  width: 90px;
+  height: 90px;
+  padding: 12px;
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  margin-bottom: 18px;
+  animation: loaderPulse 1.6s ease-in-out infinite;
+}
+.app-loader-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3px solid var(--border-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto 14px;
+  animation: spin 1s linear infinite;
+}
+.app-loader-text {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+@keyframes loaderPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.04); opacity: .85; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}

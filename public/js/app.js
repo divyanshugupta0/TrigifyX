@@ -312,18 +312,24 @@ function showSection(section) {
   }
 }
 
+function hideLoader() {
+  const loader = $("#app-loader");
+  if (loader) loader.classList.add("hide");
+}
+
 function showLanding() {
   showSection("landing");
+  hideLoader();
 }
 
 function showLogin() {
   showSection("login");
-  updateNavForGuest();
+  hideLoader();
 }
 
 function showSignup() {
   showSection("signup");
-  updateNavForGuest();
+  hideLoader();
 }
 
 function showApp() {
@@ -1937,10 +1943,12 @@ async function onLogin(u) {
   }
 
   showApp();
+  hideLoader();
 }
 
 function showProfileComplete(u, p) {
   showSection("complete");
+  hideLoader();
   $("#complete-email").textContent = u.email || p.email || "—";
   $("#complete-name").value = p.name || (u.displayName || "");
   $("#complete-tg").value = p.telegram || "";
