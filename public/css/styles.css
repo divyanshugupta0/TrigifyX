@@ -1468,3 +1468,107 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
 #landing-view .auth-card .lead {
   font-size: 13px;
 }
+
+/* Security alerts code tabs */
+.code-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.code-tab {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.code-tab:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.code-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.code-wrapper {
+  position: relative;
+}
+
+.code-wrapper textarea {
+  width: 100%;
+  min-height: 140px;
+  padding: 16px;
+  background: #0F172A;
+  color: #E2E8F0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.code-wrapper .copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+/* Params table */
+.params-table-wrap {
+  overflow-x: auto;
+  margin-top: 8px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.params-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 600px;
+}
+
+.params-table th,
+.params-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.params-table th {
+  background: var(--card);
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.params-table tr:last-child td {
+  border-bottom: none;
+}
+
+.params-table tr:hover td {
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.params-table code {
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--accent);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: "SF Mono", "Fira Code", "Courier New", monospace;
+}

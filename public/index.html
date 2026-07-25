@@ -791,29 +791,80 @@
                         <h2>Install Integration</h2>
                         <p class="lead">
                             Send a POST request to the endpoint below with your API key and alert data.
+                            Choose your language below to copy the example.
                         </p>
+
+                        <div class="code-tabs">
+                            <div class="code-tab active" data-lang="curl">cURL</div>
+                            <div class="code-tab" data-lang="nodejs">Node.js</div>
+                            <div class="code-tab" data-lang="python">Python</div>
+                            <div class="code-tab" data-lang="go">Go</div>
+                            <div class="code-tab" data-lang="php">PHP</div>
+                            <div class="code-tab" data-lang="java">Java</div>
+                            <div class="code-tab" data-lang="ruby">Ruby</div>
+                        </div>
 
                         <div class="code-wrapper">
                             <textarea id="sec-snippet" readonly></textarea>
                             <button class="copy" id="sec-copy-snippet">Copy</button>
                         </div>
 
-                        <h4>Example Payload</h4>
-                        <div class="code-wrapper">
-                            <textarea id="sec-example-payload" readonly>{
-  "alert_type": "intrusion",
-  "severity": "high",
-  "title": "Motion Detected - Zone 3",
-  "message": "Intrusion detected at perimeter zone 3. Camera 7 activated.",
-  "source": "camera_7",
-  "timestamp": "2026-07-25T14:30:00Z",
-  "metadata": {
-    "zone": "perimeter_3",
-    "camera_id": "cam_7",
-    "confidence": 0.94
-  }
-}</textarea>
-                            <button class="copy" id="sec-copy-example-payload">Copy</button>
+                        <h4>Payload Parameters</h4>
+                        <div class="params-table-wrap">
+                            <table class="params-table">
+                                <thead>
+                                    <tr>
+                                        <th>Field</th>
+                                        <th>Type</th>
+                                        <th>Required</th>
+                                        <th>Description</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><code>alert_type</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge ok">Yes</span></td>
+                                        <td>Type of alert. One of: <code>intrusion</code>, <code>access_control</code>, <code>camera_motion</code>, <code>fire_safety</code>, <code>system_health</code>, <code>custom</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>severity</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge ok">Yes</span></td>
+                                        <td>Severity level. One of: <code>low</code>, <code>medium</code>, <code>high</code>, <code>critical</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>title</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge ok">Yes</span></td>
+                                        <td>Short alert title shown in Telegram</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>message</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge warn">No</span></td>
+                                        <td>Detailed alert message/body</td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>source</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge warn">No</span></td>
+                                        <td>Source identifier, e.g. <code>camera_7</code>, <code>sensor_12</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>timestamp</code></td>
+                                        <td>string</td>
+                                        <td><span class="badge warn">No</span></td>
+                                        <td>ISO 8601 event time, e.g. <code>2026-07-25T14:30:00Z</code></td>
+                                    </tr>
+                                    <tr>
+                                        <td><code>metadata</code></td>
+                                        <td>object</td>
+                                        <td><span class="badge warn">No</span></td>
+                                        <td>Additional key/value data specific to your security system</td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
 
                         <h4>Alert Types</h4>

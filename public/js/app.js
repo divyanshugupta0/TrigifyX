@@ -742,30 +742,235 @@ function renderSecurityAlerts(p) {
     }
   }
 
-  renderSecuritySnippet(p);
+  renderSecuritySnippet(p, currentSnippetLang);
 }
 
-function renderSecuritySnippet(p) {
-  const ENDPOINT = ENV.apiBase || "";
-  const apiBase = ENDPOINT ? ENDPOINT.replace(/\/$/, "") : "";
-  const snippet = `curl -X POST ${apiBase}/api/security-alerts/send \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer ${p.securityApiKey || 'YOUR_SECURITY_API_KEY'}" \
+function renderSecuritySnippet(p, lang) {
+  const endpoint = (ENV.apiBase || "").replace(/\/$/, "");
+  const apiBase = endpoint || "https://trigifyx-worker.divyanshugupta415.workers.dev";
+  const apiKey = p.securityApiKey || "YOUR_SECURITY_API_KEY";
+  const timestampPlaceholder = "$(date -u +%Y-%m-%dT%H:%M:%SZ)";
+  const timestampPython = "datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')";
+  const timestampJs = "new Date().toISOString()";
+  const timestampGo = "time.Now().UTC().Format(time.RFC3339)";
+  const timestampPhp = "gmdate('Y-m-d\\TH:i:s\\Z')";
+  const timestampJava = "java.time.Instant.now().toString()";
+  const timestampRuby = "Time.now.utc.iso8601";
+
+  const snippets = {
+    curl: `curl -X POST ${apiBase}/api/security-alerts/send \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${apiKey}" \\
   -d '{
     "alert_type": "intrusion",
     "severity": "high",
     "title": "Motion Detected - Zone 3",
     "message": "Intrusion detected at perimeter zone 3.",
     "source": "camera_7",
-    "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+    "timestamp": "'"'"${timestampPlaceholder}"'"'",
     "metadata": {
       "zone": "perimeter_3",
       "camera_id": "cam_7"
     }
-  }'`;
+  }'`,
 
+    nodejs: `const axios = require('axios');
+
+const payload = {
+  alert_type: "intrusion",
+  severity: "high",
+  title: "Motion Detected - Zone 3",
+  message: "Intrusion detected at perimeter zone 3.",
+  source: "camera_7",
+  timestamp: ${timestampJs},
+  metadata: {
+    zone: "perimeter_3",
+    camera_id: "cam_7"
+  }
+};
+
+axios.post(
+  "${apiBase}/api/security-alerts/send",
+  payload,
+  {
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer ${apiKey}"
+    }
+  }
+).then(res => console.log("Alert sent:", res.data))
+  .catch(err => console.error("Alert failed:", err.response?.data || err.message));`,
+
+    python: `import requests
+import json
+
+url = "${apiBase}/api/security-alerts/send"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer ${apiKey}"
+}
+payload = {
+    "alert_type": "intrusion",
+    "severity": "high",
+    "title": "Motion Detected - Zone 3",
+    "message": "Intrusion detected at perimeter zone 3.",
+    "source": "camera_7",
+    "timestamp": ${timestampPython},
+    "metadata": {
+        "zone": "perimeter_3",
+        "camera_id": "cam_7"
+    }
+}
+
+response = requests.post(url, headers=headers, data=json.dumps(payload))
+print(response.status_code, response.text)`,
+
+    go: `package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "time"
+)
+
+func sendAlert() error {
+    payload := map[string]interface{}{
+        "alert_type": "intrusion",
+        "severity":   "high",
+        "title":      "Motion Detected - Zone 3",
+        "message":    "Intrusion detected at perimeter zone 3.",
+        "source":     "camera_7",
+        "timestamp":  time.Now().UTC().Format(time.RFC3339),
+        "metadata": map[string]string{
+            "zone":      "perimeter_3",
+            "camera_id": "cam_7",
+        },
+    }
+
+    body, _ := json.Marshal(payload)
+    req, err := http.NewRequest("POST", "${apiBase}/api/security-alerts/send", bytes.NewBuffer(body))
+    if err != nil { return err }
+
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Authorization", "Bearer ${apiKey}")
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil { return err }
+    defer resp.Body.Close()
+
+    fmt.Println("Status:", resp.Status)
+    return nil
+}`,
+
+    php: `<?php
+$url = "${apiBase}/api/security-alerts/send";
+
+$payload = [
+    "alert_type" => "intrusion",
+    "severity"   => "high",
+    "title"      => "Motion Detected - Zone 3",
+    "message"    => "Intrusion detected at perimeter zone 3.",
+    "source"     => "camera_7",
+    "timestamp"  => gmdate("Y-m-d\\TH:i:s\\Z"),
+    "metadata"   => [
+        "zone"      => "perimeter_3",
+        "camera_id" => "cam_7"
+    ]
+];
+
+$ch = curl_init($url);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    "Content-Type: application/json",
+    "Authorization: Bearer ${apiKey}"
+]);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+
+$response = curl_exec($ch);
+$httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
+
+echo "HTTP $httpCode\\n";
+echo $response;
+?>`,
+    java: `import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Instant;
+
+public class SecurityAlert {
+    public static void main(String[] args) throws Exception {
+        var payload = """
+        {
+            "alert_type": "intrusion",
+            "severity": "high",
+            "title": "Motion Detected - Zone 3",
+            "message": "Intrusion detected at perimeter zone 3.",
+            "source": "camera_7",
+            "timestamp": "%s",
+            "metadata": {
+                "zone": "perimeter_3",
+                "camera_id": "cam_7"
+            }
+        }
+        """.formatted(Instant.now().toString());
+
+        var client = HttpClient.newHttpClient();
+        var request = HttpRequest.newBuilder()
+            .uri(URI.create("${apiBase}/api/security-alerts/send"))
+            .header("Content-Type", "application/json")
+            .header("Authorization", "Bearer ${apiKey}")
+            .POST(HttpRequest.BodyPublishers.ofString(payload))
+            .build();
+
+        var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        System.out.println("Status: " + response.statusCode());
+        System.out.println("Body: " + response.body());
+    }
+}`,
+
+    ruby: `require "net/http"
+require "uri"
+require "json"
+
+url = URI("${apiBase}/api/security-alerts/send")
+payload = {
+  alert_type: "intrusion",
+  severity:   "high",
+  title:      "Motion Detected - Zone 3",
+  message:    "Intrusion detected at perimeter zone 3.",
+  source:     "camera_7",
+  timestamp:  Time.now.utc.iso8601,
+  metadata: {
+    zone:      "perimeter_3",
+    camera_id: "cam_7"
+  }
+}
+
+req = Net::HTTP::Post.new(url)
+req["Content-Type"] = "application/json"
+req["Authorization"] = "Bearer ${apiKey}"
+req.body = payload.to_json
+
+res = Net::HTTP.start(url.hostname, url.port, use_ssl: true) do |http|
+  http.request(req)
+end
+
+puts "Status: #{res.code}"
+puts "Body: #{res.body}"`
+  };
+
+  const snippet = snippets[lang] || snippets["curl"];
   const snippetEl = $("#sec-snippet");
   if (snippetEl) snippetEl.textContent = snippet;
+}
+
+function renderSecuritySnippetDefault(p) {
+  renderSecuritySnippet(p, "curl");
 }
 function renderSettings(p) {
   if (!p) return;
@@ -1418,6 +1623,18 @@ function bindUI() {
   $("#sec-copy-snippet").onclick = () => {
     copy($("#sec-snippet").textContent, $("#sec-copy-snippet"));
   };
+
+  let currentSnippetLang = "curl";
+  document.querySelectorAll(".code-tab").forEach(tab => {
+    tab.onclick = async () => {
+      document.querySelectorAll(".code-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      const lang = tab.getAttribute("data-lang");
+      currentSnippetLang = lang;
+      const p = await getProfile(currentUser);
+      if (p) renderSecuritySnippet(p, lang);
+    };
+  });
 
   $("#sec-copy-example-payload").onclick = () => {
     copy($("#sec-example-payload").textContent, $("#sec-copy-example-payload"));
