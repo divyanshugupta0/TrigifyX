@@ -328,8 +328,17 @@ function showSignup() {
 
 function showApp() {
   updateNavForUser();
-  renderMessagingDashboard();
-  showSection("messaging");
+  const last = (() => {
+    try { return localStorage.getItem("tgx_last_section"); } catch { return ""; }
+  })();
+  if (last === "security-alerts") {
+    const p = currentProfile();
+    if (p) renderSecurityAlerts(p);
+    showSection("security-alerts");
+  } else {
+    renderMessagingDashboard();
+    showSection("messaging");
+  }
 }
 
 function updateNavForGuest() {
@@ -1858,14 +1867,6 @@ async function onLogin(u) {
   }
 
   showApp();
-
-  // Restore last visited section after login
-  const last = (() => {
-    try { return localStorage.getItem("tgx_last_section"); } catch { return ""; }
-  })();
-  if (last && ["messaging", "security-alerts"].includes(last)) {
-    showSection(last);
-  }
 }
 
 function showProfileComplete(u, p) {
