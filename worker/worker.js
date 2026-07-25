@@ -1267,7 +1267,7 @@ function cors(response, env) {
 
     response.headers.set(
         "Access-Control-Allow-Headers",
-        "Content-Type"
+        "Content-Type, Authorization"
     );
 
     response.headers.set(
