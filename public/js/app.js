@@ -534,7 +534,15 @@ function renderDashboard(p) {
   $("#msg-dash-site").textContent = sites.length
     ? (sites.length === 1 ? sites[0] : sites.join(", "))
     : "—";
-  $("#msg-dash-tg").textContent = p.telegram || "—";
+
+  const tgLinked = !!p.telegram_chat_id;
+  const tgEl = $("#msg-dash-tg");
+  if (tgEl) {
+    tgEl.innerHTML = tgLinked
+      ? '<span class="badge ok">Linked</span>'
+      : '<span class="badge warn">Not Linked</span>';
+  }
+
   $("#msg-dash-terms").textContent = p.termsAcceptedAt
     ? new Date(p.termsAcceptedAt).toLocaleString()
     : "—";
@@ -547,10 +555,6 @@ function renderDashboard(p) {
   if (badge) {
     badge.className = "badge " + (blocked ? "warn" : "ok");
     badge.textContent = blocked ? "Blocked" : "Live";
-  }
-  if (blocked) {
-    const t = $("#msg-test-msg-btn-2");
-    if (t) { t.disabled = true; t.textContent = "Token Blocked"; }
   }
 
   $("#msg-dash-last").textContent = p.lastSubmissionAt
@@ -1076,6 +1080,9 @@ function bindUI() {
   // Nav links
   document.querySelectorAll(".nav-link").forEach(link => {
     link.onclick = async (e) => {
+      const href = link.getAttribute("href") || "";
+      if (href === "/help/") return;
+      
       e.preventDefault();
       const section = link.getAttribute("data-section");
       if (section === "messaging") {
