@@ -678,6 +678,13 @@ function renderSecurityAlerts(p) {
       : '<span class="badge warn">Not Linked</span>';
   }
 
+  const tgStatusCard = $("#sec-disp-tg-status");
+  if (tgStatusCard) {
+    tgStatusCard.innerHTML = tgLinked
+      ? '<span class="badge ok">Linked</span>'
+      : '<span class="badge warn">Not Linked</span>';
+  }
+
   if (tgLinked) {
     $("#sec-tg-setup-section").classList.add("inactive");
     $("#sec-tg-setup-section").classList.remove("active");
@@ -700,12 +707,13 @@ function renderSecurityAlerts(p) {
   }
 
   const securityApiKey = p.securityApiKey || "";
+  const securityApiKeyIssued = !!p.securityApiKeyIssued;
   const apikeyNotIssued = $("#sec-apikey-not-issued");
   const apikeyOtpSection = $("#sec-apikey-otp-section");
   const apikeyIssued = $("#sec-apikey-issued");
   const issueBtn = $("#sec-issue-apikey-btn");
 
-  if (securityApiKey) {
+  if (securityApiKeyIssued && securityApiKey) {
     apikeyNotIssued.classList.remove("active");
     apikeyOtpSection.classList.remove("active");
     apikeyIssued.classList.add("active");
@@ -724,10 +732,10 @@ function renderSecurityAlerts(p) {
   }
 
   if (issueBtn) {
-    issueBtn.disabled = !tgLinked || !!securityApiKey;
+    issueBtn.disabled = !tgLinked || securityApiKeyIssued;
     if (!tgLinked) {
       issueBtn.textContent = "Issue API Key (Requires Telegram Link)";
-    } else if (securityApiKey) {
+    } else if (securityApiKeyIssued) {
       issueBtn.textContent = "API Key Already Issued";
     } else {
       issueBtn.textContent = "Issue Security Alerts API Key";
@@ -1358,6 +1366,7 @@ function bindUI() {
         window.__otpTimer = null;
 
         p.securityApiKey = data.securityApiKey;
+        p.securityApiKeyIssued = true;
         await saveProfile(currentUser, p);
         window.__profile = p;
 
@@ -1466,6 +1475,7 @@ function bindUI() {
 
         const data = await res.json();
         p.securityApiKey = data.securityApiKey;
+        p.securityApiKeyIssued = true;
         await saveProfile(currentUser, p);
         window.__profile = p;
         renderSecurityAlerts(p);
@@ -1556,6 +1566,7 @@ async function onLogin(u) {
   if (typeof p.submissionCount === "undefined") { p.submissionCount = 0; needsSave = true; }
   if (typeof p.lastSubmissionAt === "undefined") { p.lastSubmissionAt = null; needsSave = true; }
   if (typeof p.securityApiKey === "undefined") { p.securityApiKey = ""; needsSave = true; }
+  if (typeof p.securityApiKeyIssued === "undefined") { p.securityApiKeyIssued = false; needsSave = true; }
   if (typeof p.telegram_chat_id === "undefined") { p.telegram_chat_id = ""; needsSave = true; }
   if (needsSave) await saveProfile(u, p);
 

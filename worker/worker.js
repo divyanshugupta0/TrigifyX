@@ -2991,7 +2991,7 @@ async function handleSecurityAlertsVerifyOtp(request, env, ctx) {
             fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ securityApiKey: securityApiKey })
+                body: JSON.stringify({ securityApiKey: securityApiKey, securityApiKeyIssued: true })
             }).catch(function () {})
         );
     }
@@ -3246,7 +3246,7 @@ async function handleSecurityAlertsRegenerate(request, env, ctx) {
             fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ securityApiKey: newSecurityApiKey })
+                body: JSON.stringify({ securityApiKey: newSecurityApiKey, securityApiKeyIssued: true })
             }).catch(function () {})
         );
     }
