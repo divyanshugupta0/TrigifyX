@@ -1584,7 +1584,7 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: opacity .25s ease, visibility .25s ease;
+  transition: opacity .3s ease, visibility .3s ease;
 }
 .app-loader.hide {
   opacity: 0;
@@ -1595,33 +1595,33 @@ code{ background:rgba(37,99,235,.10); padding:4px 8px; border-radius:8px; font-s
   text-align: center;
 }
 .app-loader-logo {
-  width: 90px;
-  height: 90px;
-  padding: 12px;
-  border-radius: 24px;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 24px;
+  border-radius: 20px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  margin-bottom: 18px;
-  animation: loaderPulse 1.6s ease-in-out infinite;
+  animation: loaderPulse 2s ease-in-out infinite;
 }
 .app-loader-spinner {
-  width: 38px;
-  height: 38px;
-  border: 3px solid var(--border-soft);
+  width: 32px;
+  height: 32px;
+  border: 2.5px solid var(--border-soft);
   border-top-color: var(--accent);
   border-radius: 50%;
-  margin: 0 auto 14px;
-  animation: spin 1s linear infinite;
+  margin: 0 auto 18px;
+  animation: spin .8s linear infinite;
 }
 .app-loader-text {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
+  letter-spacing: 0.2px;
 }
 
 @keyframes loaderPulse {
   0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.04); opacity: .85; }
+  50% { transform: scale(1.05); opacity: .9; }
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
