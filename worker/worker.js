@@ -2958,42 +2958,42 @@ async function handleSecurityAlertsVerifyOtp(request, env, ctx) {
     }
 
     // Mark OTP as verified
-    ctx.waitUntil(
-        fetch(firebaseBase + "/security-otp/" + encodeURIComponent(otpCode) + ".json", {
+    try {
+        await fetch(firebaseBase + "/security-otp/" + encodeURIComponent(otpCode) + ".json", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ verified: true, verifiedAt: Date.now() })
-        }).catch(function () {})
-    );
+        });
+    } catch {}
 
     // Store security API key in Firebase
     // We write to a public node that the client can read
-    ctx.waitUntil(
-        fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
+    try {
+        await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(securityApiKey)
-        }).catch(function () {})
-    );
+        });
+    } catch {}
 
     // Also write reverse index so send-alert can resolve token from API key
-    ctx.waitUntil(
-        fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(securityApiKey) + ".json", {
+    try {
+        await fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(securityApiKey) + ".json", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(trimmedToken)
-        }).catch(function () {})
-    );
+        });
+    } catch {}
 
     // If we have uid, also update user profile
     if (uid) {
-        ctx.waitUntil(
-            fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+        try {
+            await fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ securityApiKey: securityApiKey, securityApiKeyIssued: true })
-            }).catch(function () {})
-        );
+            });
+        } catch {}
     }
 
     console.log("[security-alerts] API key issued for token:", trimmedToken.slice(0, 8) + "...");
@@ -3224,31 +3224,31 @@ async function handleSecurityAlertsRegenerate(request, env, ctx) {
     const newSecurityApiKey = generateSecurityApiKey();
 
     // Update Firebase
-    ctx.waitUntil(
-        fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
+    try {
+        await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(newSecurityApiKey)
-        }).catch(function () {})
-    );
+        });
+    } catch {}
 
     // Update reverse index
-    ctx.waitUntil(
-        fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(newSecurityApiKey) + ".json", {
+    try {
+        await fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(newSecurityApiKey) + ".json", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(trimmedToken)
-        }).catch(function () {})
-    );
+        });
+    } catch {}
 
     if (uid) {
-        ctx.waitUntil(
-            fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+        try {
+            await fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ securityApiKey: newSecurityApiKey, securityApiKeyIssued: true })
-            }).catch(function () {})
-        );
+            });
+        } catch {}
     }
 
     console.log("[security-alerts] API key regenerated for token:", trimmedToken.slice(0, 8) + "...");

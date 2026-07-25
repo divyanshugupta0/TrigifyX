@@ -741,6 +741,31 @@ function renderSecurityAlerts(p) {
       issueBtn.textContent = "Issue Security Alerts API Key";
     }
   }
+
+  renderSecuritySnippet(p);
+}
+
+function renderSecuritySnippet(p) {
+  const ENDPOINT = ENV.apiBase || "";
+  const apiBase = ENDPOINT ? ENDPOINT.replace(/\/$/, "") : "";
+  const snippet = `curl -X POST ${apiBase}/api/security-alerts/send \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${p.securityApiKey || 'YOUR_SECURITY_API_KEY'}" \
+  -d '{
+    "alert_type": "intrusion",
+    "severity": "high",
+    "title": "Motion Detected - Zone 3",
+    "message": "Intrusion detected at perimeter zone 3.",
+    "source": "camera_7",
+    "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+    "metadata": {
+      "zone": "perimeter_3",
+      "camera_id": "cam_7"
+    }
+  }'`;
+
+  const snippetEl = $("#sec-snippet");
+  if (snippetEl) snippetEl.textContent = snippet;
 }
 function renderSettings(p) {
   if (!p) return;
