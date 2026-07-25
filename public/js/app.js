@@ -770,19 +770,31 @@ function bindUI() {
 
   // Nav links
   document.querySelectorAll(".nav-link").forEach(link => {
-    link.onclick = (e) => {
+    link.onclick = async (e) => {
       e.preventDefault();
       const section = link.getAttribute("data-section");
       if (section === "messaging") {
-        renderMessagingDashboard();
+        const p = await getProfile(currentUser);
+        if (p) {
+          window.__profile = p;
+          await mergeTokenMeta(p);
+          renderMessagingDashboard();
+        }
         showSection("messaging");
       } else if (section === "security-alerts") {
+        const p = await getProfile(currentUser);
+        if (p) {
+          window.__profile = p;
+          await mergeTokenMeta(p);
+          renderSecurityAlerts(p);
+        }
         showSection("security-alerts");
-        const p = currentProfile();
-        if (p) renderSecurityAlerts(p);
       } else if (section === "settings") {
-        const p = currentProfile();
-        if (p) renderSettings(p);
+        const p = await getProfile(currentUser);
+        if (p) {
+          window.__profile = p;
+          renderSettings(p);
+        }
         showSection("settings");
       } else {
         showLanding();
