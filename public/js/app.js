@@ -396,12 +396,25 @@ function renderMessagingDashboard() {
     accessSection.classList.toggle("hide", linked);
   }
 
-  if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
+  const getAccessCodeBtn = $("#msg-get-access-code");
+  const hasValidAccessCode = p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now();
+  
+  if (hasValidAccessCode) {
     const display = $("#msg-access-code-display");
     const timer = $("#msg-access-code-timer");
     if (display && timer) {
       display.textContent = p._accessCode;
       display.classList.remove("hide");
+    }
+    if (getAccessCodeBtn) {
+      getAccessCodeBtn.classList.add("hide");
+    }
+  } else {
+    const display = $("#msg-access-code-display");
+    const timer = $("#msg-access-code-timer");
+    if (display) display.classList.add("hide");
+    if (getAccessCodeBtn) {
+      getAccessCodeBtn.classList.remove("hide");
     }
   }
 
@@ -411,8 +424,12 @@ function renderMessagingDashboard() {
       if (!p || !p._accessCodeExpiresAt || !p._accessCode) {
         const timer = $("#msg-access-code-timer");
         const display = $("#msg-access-code-display");
+        const btn = $("#msg-get-access-code");
         if (timer) timer.textContent = "0:00";
         if (display) display.classList.add("hide");
+        if (btn) btn.classList.remove("hide");
+        try { localStorage.removeItem("tgx_access_code"); } catch {}
+        try { localStorage.removeItem("tgx_access_code_expires"); } catch {}
         return;
       }
       const remaining = Math.max(0, Math.floor((p._accessCodeExpiresAt - Date.now()) / 1000));
@@ -420,11 +437,15 @@ function renderMessagingDashboard() {
       const s = (remaining % 60).toString().padStart(2, "0");
       const timerEl = $("#msg-access-code-timer");
       const displayEl = $("#msg-access-code-display");
+      const btn = $("#msg-get-access-code");
       if (timerEl) timerEl.textContent = m + ":" + s;
       if (remaining <= 0) {
         if (displayEl) displayEl.classList.add("hide");
+        if (btn) btn.classList.remove("hide");
         window.__accessCode = null;
         window.__accessCodeExpiresAt = null;
+        try { localStorage.removeItem("tgx_access_code"); } catch {}
+        try { localStorage.removeItem("tgx_access_code_expires"); } catch {}
       }
     }, 1000);
   }
@@ -554,6 +575,7 @@ function renderDashboard(p) {
 }
 
 const TEST_MSG_LIMIT = 3;
+const SECURITY_TEST_ALERT_LIMIT = 3;
 
 function updateTestMsgUI(p) {
   const used = p.testMessageCount || 0;
@@ -718,10 +740,17 @@ function renderSecurityAlerts(p) {
   if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
     const display = $("#sec-access-code-display");
     const timer = $("#sec-access-code-timer");
+    const getBtn = $("#sec-get-access-code");
     if (display && timer) {
       display.textContent = p._accessCode;
       display.classList.remove("hide");
     }
+    if (getBtn) getBtn.classList.add("hide");
+  } else {
+    const display = $("#sec-access-code-display");
+    const getBtn = $("#sec-get-access-code");
+    if (display) display.classList.add("hide");
+    if (getBtn) getBtn.classList.remove("hide");
   }
 
   const securityApiKey = p.securityApiKey || "";
@@ -761,6 +790,20 @@ function renderSecurityAlerts(p) {
   }
 
   renderSecuritySnippet(p, window.__currentSnippetLang || "curl");
+  updateSecurityTestAlertUI(p);
+}
+
+function updateSecurityTestAlertUI(p) {
+  if (!p) return;
+  const used = p.securityTestAlertCount || 0;
+  const remaining = Math.max(0, SECURITY_TEST_ALERT_LIMIT - used);
+  const countEl = $("#sec-test-alert-count");
+  if (countEl) {
+    countEl.textContent = remaining + " test alert" + (remaining === 1 ? "" : "s") + " left";
+  }
+  const disabled = remaining <= 0;
+  const btn = $("#sec-send-test-alert");
+  if (btn) btn.disabled = disabled;
 }
 
 function renderSecuritySnippet(p, lang) {
@@ -1251,8 +1294,8 @@ function bindUI() {
     }
   };
 
-  $("#msg-regen-access-code").onclick = async () => {
-    await withLoading($("#msg-regen-access-code"), "Refreshing…", async () => {
+  $("#msg-get-access-code").onclick = async () => {
+    await withLoading($("#msg-get-access-code"), "Generating…", async () => {
       const p = await getProfile(currentUser);
       const db = (window.__fb || {}).db;
       if (!db || !p || !p.accessToken) return toast("Access token not ready");
@@ -1268,7 +1311,7 @@ function bindUI() {
       } catch (_) {}
       window.__profile = p;
       renderMessagingDashboard();
-      toast("New access code generated");
+      toast("Access code generated");
     });
   };
 
@@ -1523,8 +1566,8 @@ function bindUI() {
     }
   };
 
-  $("#sec-regen-access-code").onclick = async () => {
-    await withLoading($("#sec-regen-access-code"), "Refreshing…", async () => {
+  $("#sec-get-access-code").onclick = async () => {
+    await withLoading($("#sec-get-access-code"), "Generating…", async () => {
       const p = await getProfile(currentUser);
       const db = (window.__fb || {}).db;
       if (!db || !p || !p.accessToken) return toast("Access token not ready");
@@ -1540,7 +1583,7 @@ function bindUI() {
       } catch (_) {}
       window.__profile = p;
       renderSecurityAlerts(p);
-      toast("New access code generated");
+      toast("Access code generated");
     });
   };
 
@@ -1703,6 +1746,14 @@ function bindUI() {
         toast("Test alert sent to Telegram");
         $("#sec-test-title").value = "";
         $("#sec-test-message").value = "";
+        
+        const p2 = await getProfile(currentUser);
+        if (p2) {
+          p2.securityTestAlertCount = (p2.securityTestAlertCount || 0) + 1;
+          await saveProfile(currentUser, p2);
+          window.__profile = p2;
+          updateSecurityTestAlertUI(p2);
+        }
       } catch (e) {
         toast(e.message || "Failed to send alert");
       }
@@ -1739,6 +1790,7 @@ function bindUI() {
         const data = await res.json();
         p.securityApiKey = data.securityApiKey;
         p.securityApiKeyIssued = true;
+        p.securityTestAlertCount = 0;
         await saveProfile(currentUser, p);
         window.__profile = p;
         renderSecurityAlerts(p);
@@ -1830,6 +1882,7 @@ async function onLogin(u) {
   if (typeof p.lastSubmissionAt === "undefined") { p.lastSubmissionAt = null; needsSave = true; }
   if (typeof p.securityApiKey === "undefined") { p.securityApiKey = ""; needsSave = true; }
   if (typeof p.securityApiKeyIssued === "undefined") { p.securityApiKeyIssued = false; needsSave = true; }
+  if (typeof p.securityTestAlertCount === "undefined") { p.securityTestAlertCount = 0; needsSave = true; }
   if (typeof p.telegram_chat_id === "undefined") { p.telegram_chat_id = ""; needsSave = true; }
   if (needsSave) await saveProfile(u, p);
 
