@@ -305,6 +305,11 @@ function showSection(section) {
   if (footer) {
     footer.classList.toggle("hide", hideFooter);
   }
+
+  // Remember last section for reload restoration
+  if (section !== "landing" && section !== "login" && section !== "signup") {
+    try { localStorage.setItem("tgx_last_section", section); } catch {}
+  }
 }
 
 function showLanding() {
@@ -742,7 +747,7 @@ function renderSecurityAlerts(p) {
     }
   }
 
-  renderSecuritySnippet(p, currentSnippetLang);
+  renderSecuritySnippet(p, window.__currentSnippetLang || "curl");
 }
 
 function renderSecuritySnippet(p, lang) {
@@ -1624,21 +1629,17 @@ function bindUI() {
     copy($("#sec-snippet").textContent, $("#sec-copy-snippet"));
   };
 
-  let currentSnippetLang = "curl";
+  window.__currentSnippetLang = "curl";
   document.querySelectorAll(".code-tab").forEach(tab => {
     tab.onclick = async () => {
       document.querySelectorAll(".code-tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");
       const lang = tab.getAttribute("data-lang");
-      currentSnippetLang = lang;
+      window.__currentSnippetLang = lang;
       const p = await getProfile(currentUser);
       if (p) renderSecuritySnippet(p, lang);
     };
   });
-
-  $("#sec-copy-example-payload").onclick = () => {
-    copy($("#sec-example-payload").textContent, $("#sec-copy-example-payload"));
-  };
 
   $("#sec-send-test-alert").onclick = async () => {
     const p = await getProfile(currentUser);
@@ -1857,6 +1858,14 @@ async function onLogin(u) {
   }
 
   showApp();
+
+  // Restore last visited section after login
+  const last = (() => {
+    try { return localStorage.getItem("tgx_last_section"); } catch { return ""; }
+  })();
+  if (last && ["messaging", "security-alerts"].includes(last)) {
+    showSection(last);
+  }
 }
 
 function showProfileComplete(u, p) {
