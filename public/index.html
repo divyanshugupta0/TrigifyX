@@ -724,6 +724,11 @@
 
                         <div id="sec-tg-linked-section" class="hide">
                             <div class="kv">
+                                <span class="k">Status</span>
+                                <span class="v" id="sec-tg-linked-status"><span class="badge ok">Linked</span></span>
+                            </div>
+
+                            <div class="kv">
                                 <span class="k">Linked as</span>
                                 <span class="v" id="sec-tg-linked-username">—</span>
                             </div>
@@ -825,7 +830,7 @@
                                         <td><code>alert_type</code></td>
                                         <td>string</td>
                                         <td><span class="badge ok">Yes</span></td>
-                                        <td>Type of alert. One of: <code>intrusion</code>, <code>access_control</code>, <code>camera_motion</code>, <code>fire_safety</code>, <code>system_health</code>, <code>custom</code></td>
+                                        <td>Type of alert. One of: <code>intrusion</code>, <code>access_control</code>, <code>camera_motion</code>, <code>fire_safety</code>, <code>system_health</code>, <code>server_monitoring</code>, <code>load_limit</code>, <code>custom</code></td>
                                     </tr>
                                     <tr>
                                         <td><code>severity</code></td>
@@ -874,6 +879,8 @@
                             <div class="alert-type-card"><span class="alert-icon">📷</span><strong>Camera Motion</strong><span>Motion in restricted zone</span></div>
                             <div class="alert-type-card"><span class="alert-icon">🔥</span><strong>Fire & Safety</strong><span>Smoke/heat detected</span></div>
                             <div class="alert-type-card"><span class="alert-icon">⚙️</span><strong>System Health</strong><span>Offline/tamper/low battery</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">🖥️</span><strong>Server Monitoring</strong><span>CPU, memory, disk issues</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">📊</span><strong>Load Limit</strong><span>High CPU, RAM, or traffic</span></div>
                             <div class="alert-type-card"><span class="alert-icon">⚠️</span><strong>Custom</strong><span>Any custom alert type</span></div>
                         </div>
                     </div>
@@ -889,6 +896,8 @@
                             <option value="camera_motion">📷 Camera Motion</option>
                             <option value="fire_safety">🔥 Fire & Safety</option>
                             <option value="system_health">⚙️ System Health</option>
+                            <option value="server_monitoring">🖥️ Server Monitoring</option>
+                            <option value="load_limit">📊 Load Limit</option>
                             <option value="custom">⚠️ Custom</option>
                         </select>
 

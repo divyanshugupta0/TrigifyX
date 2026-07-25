@@ -331,14 +331,20 @@ function showApp() {
   const last = (() => {
     try { return localStorage.getItem("tgx_last_section"); } catch { return ""; }
   })();
-  if (last === "security-alerts") {
-    const p = currentProfile();
-    if (p) renderSecurityAlerts(p);
-    showSection("security-alerts");
-  } else {
+  
+  const validSections = ["messaging", "security-alerts", "settings"];
+  const sectionToShow = validSections.includes(last) ? last : "messaging";
+  
+  const p = currentProfile();
+  if (sectionToShow === "security-alerts" && p) {
+    renderSecurityAlerts(p);
+  } else if (sectionToShow === "messaging") {
     renderMessagingDashboard();
-    showSection("messaging");
+  } else if (sectionToShow === "settings" && p) {
+    renderSettings(p);
   }
+  
+  showSection(sectionToShow);
 }
 
 function updateNavForGuest() {
@@ -700,15 +706,13 @@ function renderSecurityAlerts(p) {
   }
 
   if (tgLinked) {
-    $("#sec-tg-setup-section").classList.add("inactive");
-    $("#sec-tg-setup-section").classList.remove("active");
-    $("#sec-tg-linked-section").classList.add("active");
+    $("#sec-tg-setup-section").classList.add("hide");
+    $("#sec-tg-linked-section").classList.remove("hide");
     $("#sec-tg-linked-username").textContent = "@" + (p.telegram || "—");
     $("#sec-tg-linked-chatid").textContent = p.telegram_chat_id || "—";
   } else {
-    $("#sec-tg-setup-section").classList.remove("inactive");
-    $("#sec-tg-setup-section").classList.add("active");
-    $("#sec-tg-linked-section").classList.remove("active");
+    $("#sec-tg-setup-section").classList.remove("hide");
+    $("#sec-tg-linked-section").classList.add("hide");
   }
 
   if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
@@ -791,15 +795,16 @@ function renderSecuritySnippet(p, lang) {
     nodejs: `const axios = require('axios');
 
 const payload = {
-  alert_type: "intrusion",
+  alert_type: "server_monitoring",
   severity: "high",
-  title: "Motion Detected - Zone 3",
-  message: "Intrusion detected at perimeter zone 3.",
-  source: "camera_7",
+  title: "High CPU Usage",
+  message: "CPU usage exceeded 90% on web-server-01.",
+  source: "monitoring_agent",
   timestamp: ${timestampJs},
   metadata: {
-    zone: "perimeter_3",
-    camera_id: "cam_7"
+    server: "web-server-01",
+    cpu_usage: "92%",
+    memory_usage: "85%"
   }
 };
 
@@ -824,15 +829,16 @@ headers = {
     "Authorization": "Bearer ${apiKey}"
 }
 payload = {
-    "alert_type": "intrusion",
-    "severity": "high",
-    "title": "Motion Detected - Zone 3",
-    "message": "Intrusion detected at perimeter zone 3.",
-    "source": "camera_7",
+    "alert_type": "load_limit",
+    "severity": "critical",
+    "title": "API Rate Limit Exceeded",
+    "message": "API gateway rate limit exceeded for service auth-api.",
+    "source": "api_gateway",
     "timestamp": ${timestampPython},
     "metadata": {
-        "zone": "perimeter_3",
-        "camera_id": "cam_7"
+        "service": "auth-api",
+        "requests_per_min": 1250,
+        "limit": 1000
     }
 }
 
@@ -851,15 +857,16 @@ import (
 
 func sendAlert() error {
     payload := map[string]interface{}{
-        "alert_type": "intrusion",
+        "alert_type": "server_monitoring",
         "severity":   "high",
-        "title":      "Motion Detected - Zone 3",
-        "message":    "Intrusion detected at perimeter zone 3.",
-        "source":     "camera_7",
+        "title":      "Disk Space Low",
+        "message":    "Disk space on db-primary is below 10%.",
+        "source":     "monitoring_agent",
         "timestamp":  time.Now().UTC().Format(time.RFC3339),
         "metadata": map[string]string{
-            "zone":      "perimeter_3",
-            "camera_id": "cam_7",
+            "server":      "db-primary",
+            "disk_usage":  "92%",
+            "mount_point": "/data",
         },
     }
 
@@ -882,15 +889,16 @@ func sendAlert() error {
 $url = "${apiBase}/api/security-alerts/send";
 
 $payload = [
-    "alert_type" => "intrusion",
-    "severity"   => "high",
-    "title"      => "Motion Detected - Zone 3",
-    "message"    => "Intrusion detected at perimeter zone 3.",
-    "source"     => "camera_7",
+    "alert_type" => "load_limit",
+    "severity"   => "critical",
+    "title"      => "Memory Limit Reached",
+    "message"    => "Worker node memory usage exceeded 95%.",
+    "source"     => "monitoring_agent",
     "timestamp"  => gmdate("Y-m-d\\TH:i:s\\Z"),
     "metadata"   => [
-        "zone"      => "perimeter_3",
-        "camera_id" => "cam_7"
+        "server"      => "worker-03",
+        "memory_usage" => "96%",
+        "swap_usage"  => "45%"
     ]
 ];
 
@@ -920,15 +928,16 @@ public class SecurityAlert {
     public static void main(String[] args) throws Exception {
         var payload = """
         {
-            "alert_type": "intrusion",
+            "alert_type": "server_monitoring",
             "severity": "high",
-            "title": "Motion Detected - Zone 3",
-            "message": "Intrusion detected at perimeter zone 3.",
-            "source": "camera_7",
+            "title": "Service Down",
+            "message": "Payment service is not responding on port 443.",
+            "source": "health_check",
             "timestamp": "%s",
             "metadata": {
-                "zone": "perimeter_3",
-                "camera_id": "cam_7"
+                "service": "payment-api",
+                "port": 443,
+                "duration_down": "2m 30s"
             }
         }
         """.formatted(Instant.now().toString());
@@ -953,15 +962,16 @@ require "json"
 
 url = URI("${apiBase}/api/security-alerts/send")
 payload = {
-  alert_type: "intrusion",
+  alert_type: "load_limit",
   severity:   "high",
-  title:      "Motion Detected - Zone 3",
-  message:    "Intrusion detected at perimeter zone 3.",
-  source:     "camera_7",
+  title:      "Database Connection Pool Exhausted",
+  message:    "All DB connections in use on analytics-worker-02.",
+  source:     "db_monitor",
   timestamp:  Time.now.utc.iso8601,
   metadata: {
-    zone:      "perimeter_3",
-    camera_id: "cam_7"
+    server:      "analytics-worker-02",
+    active_conns: 100,
+    max_conns:    100
   }
 }
 
@@ -1640,6 +1650,7 @@ function bindUI() {
 
   window.__currentSnippetLang = "curl";
   document.querySelectorAll(".code-tab").forEach(tab => {
+    if (!tab) return;
     tab.onclick = async () => {
       document.querySelectorAll(".code-tab").forEach(t => t.classList.remove("active"));
       tab.classList.add("active");

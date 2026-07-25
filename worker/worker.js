@@ -3090,6 +3090,8 @@ async function handleSecurityAlertsSend(request, env, ctx) {
         "camera_motion": "📷",
         "fire_safety": "🔥",
         "system_health": "⚙️",
+        "server_monitoring": "🖥️",
+        "load_limit": "📊",
         "custom": "⚠️"
     };
 
