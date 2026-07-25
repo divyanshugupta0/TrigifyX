@@ -1,0 +1,180 @@
+/* Security Alerts specific styles */
+
+/* Alert types grid */
+.alert-types-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.alert-type-card {
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-align: center;
+    background: var(--card);
+    transition: border-color 0.2s, transform 0.2s;
+}
+
+.alert-type-card:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+}
+
+.alert-icon {
+    font-size: 28px;
+    display: block;
+    margin-bottom: 8px;
+}
+
+.alert-type-card strong {
+    display: block;
+    font-size: 14px;
+    margin-bottom: 4px;
+    color: var(--text);
+}
+
+.alert-type-card span {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+/* OTP timer */
+#otp-timer {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+/* Security API key display */
+#security-apikey-display {
+    font-size: 13px;
+    letter-spacing: 0.5px;
+}
+
+/* Test alert form */
+#test-section label {
+    display: block;
+    margin-bottom: 16px;
+}
+
+#test-section select,
+#test-section input,
+#test-section textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14px;
+    margin-top: 6px;
+}
+
+#test-section select:focus,
+#test-section input:focus,
+#test-section textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-alpha);
+}
+
+/* OTP input */
+#otp-input {
+    width: 100%;
+    max-width: 200px;
+    padding: 14px 16px;
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Courier New', monospace;
+    font-size: 24px;
+    letter-spacing: 8px;
+    text-align: center;
+    margin-top: 8px;
+}
+
+#otp-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-alpha);
+}
+
+/* Security alerts log */
+#security-alerts-log .sub-site {
+    font-weight: 600;
+    color: var(--text);
+}
+
+#security-alerts-log .sub-when {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+}
+
+/* Severity badges */
+.severity-critical { background: #7f1d1d; color: #fecaca; }
+.severity-high { background: #991b1b; color: #fecaca; }
+.severity-medium { background: #92400e; color: #fde68a; }
+.severity-low { background: #14532d; color: #86efac; }
+
+/* Alert type badges */
+.alert-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-right: 8px;
+}
+
+/* Dashboard sections */
+#install-section, #test-section, #recent-alerts-section {
+    display: none;
+}
+
+#install-section.show,
+#test-section.show,
+#recent-alerts-section.show {
+    display: block;
+}
+
+/* API key card states */
+#apikey-not-issued,
+#apikey-otp-section,
+#apikey-issued {
+    display: none;
+}
+
+#apikey-not-issued.active,
+#apikey-otp-section.active,
+#apikey-issued.active {
+    display: block;
+}
+
+/* Telegram linked section */
+#tg-linked-section {
+    display: none;
+}
+
+#tg-linked-section.active {
+    display: block;
+}
+
+#tg-setup-section.active {
+    display: block;
+}
+
+#tg-setup-section.inactive {
+    display: none;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .alert-types-grid {
+        grid-template-columns: 1fr;
+    }
+}

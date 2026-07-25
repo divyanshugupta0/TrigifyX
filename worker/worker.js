@@ -990,6 +990,90 @@ export default {
                         ctx
                     );
 
+                case "/api/security-alerts/send-otp":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleSecurityAlertsSendOtp(
+                        request,
+                        env,
+                        ctx
+                    );
+
+                case "/api/security-alerts/verify-otp":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleSecurityAlertsVerifyOtp(
+                        request,
+                        env,
+                        ctx
+                    );
+
+                case "/api/security-alerts/send":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleSecurityAlertsSend(
+                        request,
+                        env,
+                        ctx
+                    );
+
+                case "/api/security-alerts/regenerate":
+
+                    if (request.method !== "POST") {
+
+                        return json(
+                            {
+                                ok: false,
+                                error: "Method Not Allowed"
+                            },
+                            405,
+                            env
+                        );
+
+                    }
+
+                    return await handleSecurityAlertsRegenerate(
+                        request,
+                        env,
+                        ctx
+                    );
+
                 case "/test-message":
 
                     if (request.method !== "POST") {
@@ -2664,7 +2748,532 @@ function buildMessage(
 }
 
 /* ============================================================
-   HTML Escape
+    Security Alerts - Send OTP
+============================================================ */
+
+async function handleSecurityAlertsSendOtp(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { accessToken } = payload || {};
+    if (typeof accessToken !== "string" || accessToken.trim() === "") {
+        return json({ ok: false, error: "Missing accessToken" }, 400, env);
+    }
+
+    const trimmedToken = accessToken.trim();
+    const invalidCheck = await checkInvalidToken(trimmedToken, ctx);
+    if (invalidCheck) return invalidCheck;
+
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    // Get user's telegram chat ID
+    let telegramChatId = "";
+    let telegram = "";
+    let uid = "";
+    try {
+        const [chatRes, tgRes, uidRes] = await Promise.all([
+            fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/telegram_chat_id.json", {
+                headers: { "Accept": "application/json" }
+            }),
+            fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/telegram.json", {
+                headers: { "Accept": "application/json" }
+            }),
+            fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/uid.json", {
+                headers: { "Accept": "application/json" }
+            })
+        ]);
+
+        if (chatRes.ok) {
+            const v = await chatRes.json();
+            if (v && String(v).trim()) telegramChatId = String(v).trim();
+        }
+        if (tgRes.ok) {
+            const v = await tgRes.json();
+            if (v && String(v).trim()) telegram = String(v).trim();
+        }
+        if (uidRes.ok) {
+            const v = await uidRes.json();
+            if (v && String(v).trim()) uid = String(v).trim();
+        }
+    } catch {
+        return json({ ok: false, error: "Unable to reach Firebase" }, 502, env);
+    }
+
+    if (!telegramChatId && !telegram) {
+        return json({ ok: false, error: "Telegram not linked for this account" }, 404, env);
+    }
+
+    const chatId = telegramChatId || telegram;
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = Date.now() + 5 * 60 * 1000; // 5 minutes
+
+    // Store OTP in Firebase
+    try {
+        await fetch(firebaseBase + "/security-otp/" + encodeURIComponent(otp) + ".json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                token: trimmedToken,
+                chatId: chatId,
+                uid: uid,
+                createdAt: Date.now(),
+                expiresAt: expiresAt,
+                verified: false
+            })
+        });
+    } catch {
+        return json({ ok: false, error: "Failed to store OTP" }, 502, env);
+    }
+
+    // Send OTP to Telegram
+    const botToken = getEnv(env, "TELEGRAM_BOT_TOKEN");
+    if (!botToken) {
+        return json({ ok: false, error: "Telegram bot not configured" }, 500, env);
+    }
+
+    const otpMessage = "🔐 <b>Security Alerts - OTP Verification</b>\n\n" +
+        "You requested a Security Alerts API key.\n\n" +
+        "Your OTP is: <code>" + otp + "</code>\n\n" +
+        "This code will expire in 5 minutes.\n\n" +
+        "If you didn't request this, please ignore this message.";
+
+    try {
+        const telegramRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/sendMessage`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: otpMessage,
+                    parse_mode: "HTML",
+                    disable_web_page_preview: true
+                }),
+                signal: new AbortController().signal
+            }
+        );
+
+        if (!telegramRes.ok) {
+            console.error("Failed to send OTP to Telegram:", telegramRes.status);
+            return json({ ok: false, error: "Failed to send OTP to Telegram" }, 502, env);
+        }
+    } catch (err) {
+        console.error("Telegram send error:", err);
+        return json({ ok: false, error: "Unable to reach Telegram" }, 502, env);
+    }
+
+    console.log("[security-alerts] OTP sent to chat:", chatId, "token:", trimmedToken.slice(0, 8) + "...");
+    return json({ ok: true, message: "OTP sent to your Telegram" }, 200, env);
+}
+
+/* ============================================================
+    Security Alerts - Verify OTP & Issue API Key
+============================================================ */
+
+async function handleSecurityAlertsVerifyOtp(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { accessToken, otp } = payload || {};
+    if (typeof accessToken !== "string" || accessToken.trim() === "") {
+        return json({ ok: false, error: "Missing accessToken" }, 400, env);
+    }
+    if (typeof otp !== "string" || !/^\d{6}$/.test(otp.trim())) {
+        return json({ ok: false, error: "OTP must be a 6-digit number" }, 400, env);
+    }
+
+    const trimmedToken = accessToken.trim();
+    const otpCode = otp.trim();
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    // Retrieve OTP from Firebase
+    let otpData;
+    try {
+        const res = await fetch(firebaseBase + "/security-otp/" + encodeURIComponent(otpCode) + ".json", {
+            headers: { "Accept": "application/json" }
+        });
+        if (!res.ok) {
+            return json({ ok: false, error: "Invalid or expired OTP" }, 404, env);
+        }
+        otpData = await res.json();
+    } catch {
+        return json({ ok: false, error: "Unable to verify OTP" }, 502, env);
+    }
+
+    if (!otpData || otpData.verified) {
+        return json({ ok: false, error: "OTP already used or invalid" }, 400, env);
+    }
+
+    if (otpData.expiresAt && Date.now() > otpData.expiresAt) {
+        return json({ ok: false, error: "OTP expired" }, 410, env);
+    }
+
+    if (otpData.token !== trimmedToken) {
+        return json({ ok: false, error: "OTP does not match this account" }, 403, env);
+    }
+
+    // Generate Security Alerts API key
+    const securityApiKey = generateSecurityApiKey();
+
+    // Get uid from token
+    let uid = otpData.uid || "";
+    if (!uid) {
+        try {
+            const uidRes = await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/uid.json", {
+                headers: { "Accept": "application/json" }
+            });
+            if (uidRes.ok) {
+                const v = await uidRes.json();
+                if (v && String(v).trim()) uid = String(v).trim();
+            }
+        } catch {}
+    }
+
+    // Mark OTP as verified
+    ctx.waitUntil(
+        fetch(firebaseBase + "/security-otp/" + encodeURIComponent(otpCode) + ".json", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ verified: true, verifiedAt: Date.now() })
+        }).catch(function () {})
+    );
+
+    // Store security API key in Firebase
+    // We write to a public node that the client can read
+    ctx.waitUntil(
+        fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(securityApiKey)
+        }).catch(function () {})
+    );
+
+    // Also write reverse index so send-alert can resolve token from API key
+    ctx.waitUntil(
+        fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(securityApiKey) + ".json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(trimmedToken)
+        }).catch(function () {})
+    );
+
+    // If we have uid, also update user profile
+    if (uid) {
+        ctx.waitUntil(
+            fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ securityApiKey: securityApiKey })
+            }).catch(function () {})
+        );
+    }
+
+    console.log("[security-alerts] API key issued for token:", trimmedToken.slice(0, 8) + "...");
+    return json({ ok: true, securityApiKey: securityApiKey }, 200, env);
+}
+
+/* ============================================================
+    Security Alerts - Send Alert
+============================================================ */
+
+async function handleSecurityAlertsSend(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const authHeader = request.headers.get("authorization") || "";
+    const securityApiKey = authHeader.replace(/^Bearer\s+/i, "").trim();
+
+    if (!securityApiKey) {
+        return json({ ok: false, error: "Missing Authorization header" }, 401, env);
+    }
+
+    const { alert_type, severity, title, message, source, timestamp, metadata } = payload || {};
+    if (!alert_type || !title) {
+        return json({ ok: false, error: "Missing required fields: alert_type, title" }, 400, env);
+    }
+
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    // Find the token associated with this security API key
+    // We search through securityApiKey nodes - but since this is a public node,
+    // we need a different approach. We'll use the security-api-keys index.
+    let token = null;
+    let chatId = null;
+    try {
+        // Look up by security API key - we need to search
+        // Since Firebase doesn't support server-side query on public nodes without indexing,
+        // we'll use a simple approach: the client already knows the securityApiKey,
+        // and we can use a reverse lookup via a separate index node.
+        // For now, we'll look up by trying to find the token that has this securityApiKey
+        // We maintain a reverse index: security-api-key-index/{apiKey} -> token
+        const indexRes = await fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(securityApiKey) + ".json", {
+            headers: { "Accept": "application/json" }
+        });
+        if (indexRes.ok) {
+            token = await indexRes.json();
+        }
+    } catch {
+        // ignore
+    }
+
+    if (!token) {
+        return json({ ok: false, error: "Invalid or revoked API key" }, 401, env);
+    }
+
+    // Get chat ID
+    try {
+        const chatRes = await fetch(firebaseBase + "/pub/" + encodeURIComponent(token) + "/telegram_chat_id.json", {
+            headers: { "Accept": "application/json" }
+        });
+        if (chatRes.ok) {
+            const v = await chatRes.json();
+            if (v && String(v).trim()) chatId = String(v).trim();
+        }
+    } catch {}
+
+    if (!chatId) {
+        return json({ ok: false, error: "Telegram not linked" }, 404, env);
+    }
+
+    // Build alert message
+    const severityEmoji = {
+        "low": "🟢",
+        "medium": "🟡",
+        "high": "🟠",
+        "critical": "🔴"
+    };
+
+    const alertEmoji = {
+        "intrusion": "🚨",
+        "access_control": "🔓",
+        "camera_motion": "📷",
+        "fire_safety": "🔥",
+        "system_health": "⚙️",
+        "custom": "⚠️"
+    };
+
+    const lines = [];
+    lines.push((alertEmoji[alert_type] || "⚠️") + " <b>" + escapeHTML(title) + "</b>");
+    lines.push("");
+    lines.push((severityEmoji[severity] || "⚪") + " <b>Severity:</b> " + escapeHTML(severity || "unknown"));
+    lines.push("🏷 <b>Type:</b> " + escapeHTML(alert_type.replace(/_/g, " ")));
+    if (message) {
+        lines.push("");
+        lines.push(escapeHTML(message));
+    }
+    if (source) {
+        lines.push("");
+        lines.push("📡 <b>Source:</b> " + escapeHTML(source));
+    }
+    if (timestamp) {
+        lines.push("🕐 <b>Time:</b> " + escapeHTML(timestamp));
+    }
+    if (metadata && typeof metadata === "object") {
+        lines.push("");
+        lines.push("<b>Metadata:</b>");
+        Object.keys(metadata).forEach(function (k) {
+            lines.push("  " + escapeHTML(k) + ": " + escapeHTML(String(metadata[k])));
+        });
+    }
+    lines.push("");
+    lines.push("🛡 TrigifyX Security Alerts");
+
+    const alertMessage = lines.join("\n");
+
+    // Send to Telegram
+    const botToken = getEnv(env, "TELEGRAM_BOT_TOKEN");
+    if (!botToken) {
+        return json({ ok: false, error: "Telegram bot not configured" }, 500, env);
+    }
+
+    try {
+        const telegramRes = await fetch(
+            `https://api.telegram.org/bot${botToken}/sendMessage`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    text: alertMessage,
+                    parse_mode: "HTML",
+                    disable_web_page_preview: true
+                }),
+                signal: new AbortController().signal
+            }
+        );
+
+        if (!telegramRes.ok) {
+            return json({ ok: false, error: "Failed to send alert to Telegram" }, 502, env);
+        }
+
+        const telegramResult = await telegramRes.json();
+        if (!telegramResult.ok) {
+            return json({ ok: false, error: "Telegram API error" }, 502, env);
+        }
+    } catch (err) {
+        return json({ ok: false, error: "Unable to reach Telegram" }, 502, env);
+    }
+
+    // Store alert in Firebase for history
+    const alertId = "alert_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    ctx.waitUntil(
+        fetch(firebaseBase + "/security-alerts/" + encodeURIComponent(token) + "/" + encodeURIComponent(alertId) + ".json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                alert_type: alert_type,
+                severity: severity,
+                title: title,
+                message: message,
+                source: source || "",
+                timestamp: timestamp || new Date().toISOString(),
+                metadata: metadata || {},
+                sentAt: Date.now(),
+                telegramMessageId: null
+            })
+        }).catch(function () {})
+    );
+
+    console.log("[security-alerts] Alert sent:", alert_type, "to chat:", chatId);
+    return json({ ok: true, alertId: alertId }, 200, env);
+}
+
+/* ============================================================
+    Security Alerts - Regenerate API Key
+============================================================ */
+
+async function handleSecurityAlertsRegenerate(request, env, ctx) {
+
+    const contentType = request.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+        return json({ ok: false, error: "Content-Type must be application/json" }, 400, env);
+    }
+
+    let payload;
+    try {
+        payload = await request.json();
+    } catch {
+        return json({ ok: false, error: "Invalid JSON body" }, 400, env);
+    }
+
+    const { accessToken } = payload || {};
+    if (typeof accessToken !== "string" || accessToken.trim() === "") {
+        return json({ ok: false, error: "Missing accessToken" }, 400, env);
+    }
+
+    const trimmedToken = accessToken.trim();
+    const firebaseBase = getEnv(env, "FIREBASE_DB_URL").replace(/\/$/, "");
+    if (!firebaseBase) {
+        return json({ ok: false, error: "Firebase not configured" }, 500, env);
+    }
+
+    // Get uid
+    let uid = "";
+    try {
+        const uidRes = await fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/uid.json", {
+            headers: { "Accept": "application/json" }
+        });
+        if (uidRes.ok) {
+            const v = await uidRes.json();
+            if (v && String(v).trim()) uid = String(v).trim();
+        }
+    } catch {}
+
+    // Generate new security API key
+    const newSecurityApiKey = generateSecurityApiKey();
+
+    // Update Firebase
+    ctx.waitUntil(
+        fetch(firebaseBase + "/pub/" + encodeURIComponent(trimmedToken) + "/securityApiKey.json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newSecurityApiKey)
+        }).catch(function () {})
+    );
+
+    // Update reverse index
+    ctx.waitUntil(
+        fetch(firebaseBase + "/security-api-key-index/" + encodeURIComponent(newSecurityApiKey) + ".json", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(trimmedToken)
+        }).catch(function () {})
+    );
+
+    if (uid) {
+        ctx.waitUntil(
+            fetch(firebaseBase + "/users/" + encodeURIComponent(uid) + ".json", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ securityApiKey: newSecurityApiKey })
+            }).catch(function () {})
+        );
+    }
+
+    console.log("[security-alerts] API key regenerated for token:", trimmedToken.slice(0, 8) + "...");
+    return json({ ok: true, securityApiKey: newSecurityApiKey }, 200, env);
+}
+
+/* ============================================================
+    Security Alerts Helpers
+============================================================ */
+
+function generateSecurityApiKey() {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    const segments = [];
+    for (let s = 0; s < 4; s++) {
+        let segment = "";
+        for (let i = 0; i < 12; i++) {
+            segment += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        segments.push(segment);
+    }
+    return "tgx_sec_" + segments.join("-");
+}
+
+/* ============================================================
+    HTML Escape
 ============================================================ */
 
 function escapeHTML(value) {

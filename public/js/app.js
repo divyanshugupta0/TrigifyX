@@ -1,14 +1,14 @@
-﻿/* TrigifyX — frontend app (Firebase v9+ modular SDK)
- * Flow:
- *  1. User signs up / logs in (Firebase Auth)
- *  2. On first login we create a profile in Realtime Database with an API key
- *  3. User links their Telegram account (chat id or @username) -> stored in RTDB
- *  4. Site generates an embeddable <script> snippet the user adds to their site
- *  5. The snippet captures form submits and forwards them to TrigifyXbot -> user's Telegram
+﻿/* TrigifyX — unified frontend app (Firebase v9+ modular SDK)
  *
- * Persisted profile fields (all live under users/{uid} in Realtime DB, or
- * localStorage in demo mode) so nothing has to be re-entered on next visit:
- *   apiKey, accessToken, telegram, siteUrl, apiKeyIssued
+ * Sections:
+ *   - Landing (marketing + auth)
+ *   - Login (standalone)
+ *   - Signup (standalone)
+ *   - Form Messaging Dashboard
+ *   - Security Alerts Dashboard
+ *   - Settings
+ *
+ * Shared authentication for both features.
  */
 import {
   createUserWithEmailAndPassword,
@@ -24,7 +24,8 @@ import {
   ref,
   set,
   get,
-  update
+  update,
+  remove
 } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-database.js";
 
 const ENV = window.__ENV__ || {};
@@ -94,7 +95,6 @@ function copy(text, btn) {
   });
 }
 
-// Turns raw Firebase / network error objects into copy a user can act on.
 function friendlyError(e) {
   const code = (e && e.code) || "";
   const map = {
@@ -115,8 +115,6 @@ function friendlyError(e) {
   return "Something went wrong. Please try again.";
 }
 
-// Runs an async handler on a button: swaps its label while pending and
-// restores it afterward, regardless of success or failure.
 async function withLoading(btn, loadingLabel, fn) {
   const original = btn.textContent;
   btn.disabled = true;
@@ -129,15 +127,9 @@ async function withLoading(btn, loadingLabel, fn) {
   }
 }
 
-/* ---------- Auth ---------- */
-// Runs the (invisible) reCAPTCHA v3 / App Check assessment and returns a fresh
-// attestation token. The button label is switched to a "Verifying…" status so
-// the user gets visible feedback that reCAPTCHA is running, even though there
-// is no checkbox. Returns true on success (or when App Check is disabled), and
-// false if verification fails.
 async function verifyRecaptcha(btn) {
   const getToken = (window.__fb || {}).getAppCheckToken;
-  if (typeof getToken !== "function") return true; // App Check not enabled
+  if (typeof getToken !== "function") return true;
   const original = btn ? btn.textContent : "";
   if (btn) {
     btn.disabled = true;
@@ -145,7 +137,6 @@ async function verifyRecaptcha(btn) {
   }
   try {
     const token = await getToken(true);
-    // token === null means App Check isn't configured; allow through.
     return true;
   } catch (e) {
     toast("reCAPTCHA verification failed. Please try again.");
@@ -158,6 +149,7 @@ async function verifyRecaptcha(btn) {
   }
 }
 
+/* ---------- Auth ---------- */
 async function signUp(email, password, name, telegram) {
   const auth = (window.__fb || {}).auth;
   const db = (window.__fb || {}).db;
@@ -241,10 +233,6 @@ async function clearUsedAccessCode(u, p) {
   await saveProfile(u, p);
 }
 
-// Merge the worker-written bookkeeping from pub/{token}/meta into the
-// profile object. This node is readable by the (unauthenticated) client
-// and is where the worker actually stores counters / exposure / last
-// submission, since it cannot write users/{uid}.
 async function mergeTokenMeta(p) {
   if (!p || !p.accessToken) return;
   const db = (window.__fb || {}).db;
@@ -269,55 +257,128 @@ async function mergeTokenMeta(p) {
   } catch (_) { /* best-effort */ }
 }
 
-/* ---------- UI rendering ---------- */
-function showAuth() {
-  console.log("[app] showAuth");
-  $("#auth-view").classList.remove("hide");
-  $("#app-view").classList.add("hide");
-  $("#profile-menu").classList.add("hide");
-  $("#profile-menu").classList.remove("open");
+/* ---------- Section Navigation ---------- */
+function hideAllSections() {
+  const sections = [
+    "landing-view", "login-view", "signup-view", "complete-view",
+    "app-view", "messaging-view", "security-alerts-view", "settings-view"
+  ];
+  sections.forEach(id => {
+    const el = $("#" + id);
+    if (el) el.classList.add("hide");
+  });
 }
+
+function showSection(section) {
+  hideAllSections();
+
+  const protectedSections = ["messaging", "security-alerts", "settings"];
+  if (protectedSections.includes(section) && !currentUser) {
+    showLogin();
+    toast("Please sign in to access this section");
+    return;
+  }
+
+  const map = {
+    "landing": "landing-view",
+    "login": "login-view",
+    "signup": "signup-view",
+    "complete": "complete-view",
+    "messaging": "messaging-view",
+    "security-alerts": "security-alerts-view",
+    "settings": "settings-view"
+  };
+  const targetId = map[section];
+  if (targetId) {
+    const el = $("#" + targetId);
+    if (el) el.classList.remove("hide");
+  }
+
+  // Update nav active state
+  document.querySelectorAll(".nav-link").forEach(link => {
+    link.classList.toggle("active", link.getAttribute("data-section") === section);
+  });
+
+  // Footer visibility: hide on auth pages, show elsewhere
+  const footer = $("#page-footer");
+  const hideFooter = ["login", "signup", "complete"].includes(section);
+  if (footer) {
+    footer.classList.toggle("hide", hideFooter);
+  }
+}
+
+function showLanding() {
+  showSection("landing");
+}
+
+function showLogin() {
+  showSection("login");
+  updateNavForGuest();
+}
+
+function showSignup() {
+  showSection("signup");
+  updateNavForGuest();
+}
+
 function showApp() {
-  console.log("[app] showApp");
-  $("#auth-view").classList.add("hide");
-  $("#app-view").classList.remove("hide");
-  $("#profile-menu").classList.remove("hide");
+  updateNavForUser();
+  renderMessagingDashboard();
+  showSection("messaging");
 }
 
-function renderProfile(p) {
-  window.__profile = p;
+function updateNavForGuest() {
+  $("#nav-guest").classList.remove("hide");
+  $("#profile-menu").classList.add("hide");
+  document.querySelectorAll(".protected-nav").forEach(el => el.classList.add("hide"));
+  document.querySelectorAll(".landing-only").forEach(el => el.classList.remove("hide"));
+}
 
-  $("#disp-name").textContent = p.name || "—";
-  $("#disp-email").textContent = p.email;
-  $("#disp-tg").textContent = p.telegram || "—";
-  $("#disp-apikey").textContent = p.accessToken || "—";
-  $("#disp-plan").textContent = p.plan || "free";
-  $("#disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
+function updateNavForUser() {
+  $("#nav-guest").classList.add("hide");
+  $("#profile-menu").classList.remove("hide");
+  document.querySelectorAll(".protected-nav").forEach(el => el.classList.remove("hide"));
+  document.querySelectorAll(".landing-only").forEach(el => el.classList.add("hide"));
+}
 
-  // Topbar profile avatar / dropdown
+/* ---------- Messaging Dashboard ---------- */
+function renderMessagingDashboard() {
+  const p = currentProfile();
+  if (!p) return;
+
+  $("#msg-disp-name").textContent = p.name || "—";
+  $("#msg-disp-email").textContent = p.email;
+  $("#msg-disp-uid").textContent = p.uid || "—";
+  $("#msg-disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
+  $("#msg-disp-plan").textContent = p.plan || "free";
+
+  // Topbar
   const label = p.name || p.email || "";
   $("#user-avatar").textContent = label ? label.trim().charAt(0).toUpperCase() : "?";
   $("#top-uid").textContent = p.name || p.email || "";
   $("#profile-dropdown-email").textContent = p.email || "—";
 
-  // Reveal the access-token card only once a token actually exists. Until
-  // then (e.g. profile not yet finalized) there is nothing to copy or
-  // regenerate, so the Regenerate button is logically hidden too.
   const hasToken = !!(p.accessToken && p.accessToken.trim());
-  $("#apikey-revealed").classList.toggle("hide", !hasToken);
+  $("#msg-apikey-revealed").classList.toggle("hide", !hasToken);
+  if (hasToken) {
+    $("#msg-disp-apikey").textContent = p.accessToken;
+  }
 
   const linked = !!p.telegram_chat_id;
-  $("#tg-status").className = "badge " + (linked ? "ok" : "warn");
-  $("#tg-status").textContent = linked ? "Linked" : "Not Linked";
+  const tgStatus = $("#msg-tg-status");
+  if (tgStatus) {
+    tgStatus.className = "badge " + (linked ? "ok" : "warn");
+    tgStatus.textContent = linked ? "Linked" : "Not Linked";
+  }
 
-  const accessSection = $("#access-code-section");
+  const accessSection = $("#msg-access-code-section");
   if (accessSection) {
     accessSection.classList.toggle("hide", linked);
   }
 
   if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
-    const display = $("#access-code-display");
-    const timer = $("#access-code-timer");
+    const display = $("#msg-access-code-display");
+    const timer = $("#msg-access-code-timer");
     if (display && timer) {
       display.textContent = p._accessCode;
       display.classList.remove("hide");
@@ -328,8 +389,8 @@ function renderProfile(p) {
     window.__accessCodeTimer = setInterval(() => {
       const p = currentProfile();
       if (!p || !p._accessCodeExpiresAt || !p._accessCode) {
-        const timer = $("#access-code-timer");
-        const display = $("#access-code-display");
+        const timer = $("#msg-access-code-timer");
+        const display = $("#msg-access-code-display");
         if (timer) timer.textContent = "0:00";
         if (display) display.classList.add("hide");
         return;
@@ -337,8 +398,8 @@ function renderProfile(p) {
       const remaining = Math.max(0, Math.floor((p._accessCodeExpiresAt - Date.now()) / 1000));
       const m = Math.floor(remaining / 60).toString().padStart(2, "0");
       const s = (remaining % 60).toString().padStart(2, "0");
-      const timerEl = $("#access-code-timer");
-      const displayEl = $("#access-code-display");
+      const timerEl = $("#msg-access-code-timer");
+      const displayEl = $("#msg-access-code-display");
       if (timerEl) timerEl.textContent = m + ":" + s;
       if (remaining <= 0) {
         if (displayEl) displayEl.classList.add("hide");
@@ -348,60 +409,36 @@ function renderProfile(p) {
     }, 1000);
   }
 
-  // Install snippet shows once the token has been issued — persisted,
-  // so it doesn't hide itself again on the next visit.
-  $("#install-card").classList.toggle("hide", !p.apiKeyIssued || p.setupComplete);
-
-  // The site input is an "add new site" field. We intentionally do NOT touch
-  // it during render, so the periodic dashboard refresh never wipes what the
-  // user is typing. It is cleared explicitly after a successful add.
-
-  // Render the registered sites list (multi-site per token).
+  $("#msg-install-card").classList.toggle("hide", !p.apiKeyIssued || p.setupComplete);
   renderSites(p);
 
-  // The setup flow (3 steps) stays visible until the user finishes setup.
-  // Finishing requires: key issued + site + telegram + confirm received +
-  // terms accepted. Until then we keep the steps visible.
   const setupDone = !!p.setupComplete;
-
-  // Account Information summary block shows once setup is complete.
-  $("#acct-extra").classList.toggle("hide", !setupDone);
+  $("#msg-acct-extra").classList.toggle("hide", !setupDone);
   if (setupDone) {
     const sites = getSites(p);
-    $("#acct-site").textContent = sites.length
+    $("#msg-acct-site").textContent = sites.length
       ? (sites.length === 1 ? sites[0] : sites.length + " sites")
       : "—";
-    $("#acct-tg").textContent = p.telegram;
-    $("#acct-apikey").textContent = p.accessToken || "—";
+    $("#msg-acct-tg").textContent = p.telegram;
+    $("#msg-acct-apikey").textContent = p.accessToken || "—";
   }
 
-  // Toggle between the setup flow and the live dashboard.
-  $("#setup-main").classList.toggle("hide", setupDone);
-  $("#live-main").classList.toggle("hide", !setupDone);
+  $("#msg-setup-main").classList.toggle("hide", setupDone);
+  $("#msg-live-main").classList.toggle("hide", !setupDone);
 
   updateTestMsgUI(p);
-
   renderSnippet(p);
-  $("#snippet-2").textContent = window.__lastSnippet || "";
+  $("#msg-snippet-2").textContent = window.__lastSnippet || "";
 
   if (setupDone) renderDashboard(p);
 }
 
 function renderSnippet(p) {
-  // The capture script is served FROM THE WORKER (no file upload needed).
-  // The snippet's <script src> points at <apiBase>/trigifyx-capture.js,
-  // and the same apiBase is passed as the endpoint. Users only paste the
-  // snippet - they never host any file themselves.
   const ENDPOINT = ENV.apiBase || "";
   const scriptSrc = ENDPOINT
     ? ENDPOINT.replace(/\/$/, "") + "/trigifyx-capture.js"
     : "js/trigifyx-capture.js";
 
-  // The backend that actually delivers to Telegram (bot token stays server-side).
-
-  // SECURITY: the public snippet contains ONLY the per-user access token
-  // and the backend endpoint. The Telegram destination (chat id) and the bot
-  // token are resolved server-side — never embedded in the page source.
   const token = p.accessToken || "";
   const endpointLine = ENDPOINT ? '\n    endpoint: "' + ENDPOINT + '",' : "";
   const snippet =
@@ -414,11 +451,10 @@ function renderSnippet(p) {
 </script>
 <script src="${scriptSrc}" defer></script>`;
 
-  $("#snippet").textContent = snippet;
+  $("#msg-snippet").textContent = snippet;
   window.__lastSnippet = snippet;
 }
 
-// Escape user-provided text before inserting into innerHTML.
 function escapeHtml(s) {
   return String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -428,16 +464,10 @@ function escapeHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
-// Render the registered sites list in the setup card. Each row has a Remove
-// button carrying its index (read by the delegated handler in bindUI).
-// Only rewrites the DOM when the list actually changed, so the periodic
-// dashboard refresh doesn't cause the list to flicker/reload.
 function renderSites(p) {
-  const ul = $("#site-list");
+  const ul = $("#msg-site-list");
   if (!ul) return;
   const sites = getSites(p);
-
-  // Skip re-render if nothing changed (prevents flicker on the 8s timer).
   const sig = JSON.stringify(sites);
   if (ul.dataset.sitesSig === sig) return;
   ul.dataset.sitesSig = sig;
@@ -457,47 +487,42 @@ function renderSites(p) {
 function renderDashboard(p) {
   const sites = getSites(p);
   const firstShort = sites.length ? sites[0].replace(/^https?:\/\//, "") : "—";
-  $("#disp-site-short").textContent = sites.length > 1
+  $("#msg-disp-site-short").textContent = sites.length > 1
     ? sites.length + " sites"
     : firstShort;
-  $("#dash-site").textContent = sites.length
+  $("#msg-dash-site").textContent = sites.length
     ? (sites.length === 1 ? sites[0] : sites.join(", "))
     : "—";
-  $("#dash-tg").textContent = p.telegram || "—";
-  $("#dash-terms").textContent = p.termsAcceptedAt
+  $("#msg-dash-tg").textContent = p.telegram || "—";
+  $("#msg-dash-terms").textContent = p.termsAcceptedAt
     ? new Date(p.termsAcceptedAt).toLocaleString()
     : "—";
 
-  // Security / exposure state
   const exposed = p.exposedChances || 0;
-  $("#dash-exposed").textContent = exposed + " / 3";
+  $("#msg-dash-exposed").textContent = exposed + " / 3";
   const blocked = !!p.blocked;
-  $("#blocked-banner").classList.toggle("hide", !blocked);
-  const badge = $("#disp-status-badge");
+  $("#msg-blocked-banner").classList.toggle("hide", !blocked);
+  const badge = $("#msg-disp-status-badge");
   if (badge) {
     badge.className = "badge " + (blocked ? "warn" : "ok");
     badge.textContent = blocked ? "Blocked" : "Live";
   }
-  // A blocked token cannot send any messages.
   if (blocked) {
-    const t = $("#test-msg-btn-2");
+    const t = $("#msg-test-msg-btn-2");
     if (t) { t.disabled = true; t.textContent = "Token Blocked"; }
   }
 
-  // Last submission info (written by the worker)
-  $("#dash-last").textContent = p.lastSubmissionAt
+  $("#msg-dash-last").textContent = p.lastSubmissionAt
     ? new Date(p.lastSubmissionAt).toLocaleString() +
       (p.lastSubmissionPage ? " · " + p.lastSubmissionPage : "")
     : "—";
 
-  // Submission counter from the profile (authoritative, persisted by worker).
   const count = p.submissionCount || 0;
-  $("#disp-submissions").textContent = count;
-  const log = $("#submission-log");
+  $("#msg-disp-submissions").textContent = count;
+  const log = $("#msg-submission-log");
   if (!count) {
     log.innerHTML = '<li class="empty">No submissions yet — they\'ll appear the moment someone fills a form.</li>';
   } else {
-    // The worker stores the latest page + timestamp; render a single summary row.
     log.innerHTML =
       '<li>' +
         '<div class="sub-site">' + (p.lastSubmissionPage || "your form") + '</div>' +
@@ -513,11 +538,13 @@ const TEST_MSG_LIMIT = 3;
 function updateTestMsgUI(p) {
   const used = p.testMessageCount || 0;
   const remaining = Math.max(0, TEST_MSG_LIMIT - used);
-  $("#test-msg-count").textContent =
-    remaining + " test message" + (remaining === 1 ? "" : "s") + " left";
+  const countEl = $("#msg-test-msg-count");
+  if (countEl) {
+    countEl.textContent = remaining + " test message" + (remaining === 1 ? "" : "s") + " left";
+  }
   const disabled = remaining <= 0 || !p.telegram;
-  const btn = $("#test-msg-btn");
-  const btn2 = $("#test-msg-btn-2");
+  const btn = $("#msg-test-msg-btn");
+  const btn2 = $("#msg-test-msg-btn-2");
   if (btn) btn.disabled = disabled;
   if (btn2) btn2.disabled = disabled;
 }
@@ -535,7 +562,7 @@ async function sendTestMessage() {
     return;
   }
 
-  await withLoading($("#test-msg-btn"), "Sending…", async () => {
+  await withLoading($("#msg-test-msg-btn"), "Sending…", async () => {
     try {
       const ENDPOINT = ENV.apiBase || "";
       const res = await fetch(
@@ -550,7 +577,7 @@ async function sendTestMessage() {
 
       p.testMessageCount = used + 1;
       await saveProfile(currentUser, p);
-      renderProfile(p);
+      renderMessagingDashboard();
       toast("Test message sent to Telegram");
     } catch (e) {
       toast(friendlyError(e));
@@ -562,14 +589,8 @@ async function sendTestMessage() {
 function isValidSiteUrl(v) {
   return /^https?:\/\/.+\..+/i.test(v.trim());
 }
-function isValidTelegram(v) {
-  return /^@?[\w]{3,}$/.test(v.trim()) || /^\d{4,}$/.test(v.trim());
-}
 
 /* ---------- Sites (multi-site per token) ---------- */
-// Return the profile's registered sites as a de-duplicated array of origins.
-// Migrates the legacy single `siteUrl` string into the list transparently so
-// existing accounts keep working without any manual step.
 function getSites(p) {
   const out = [];
   const seen = new Set();
@@ -587,9 +608,6 @@ function getSites(p) {
   return out;
 }
 
-// Persist a sites array onto the profile (and keep the legacy single
-// `siteUrl` mirrored to the first entry for backward compatibility with the
-// existing dashboard summary + older worker fallbacks).
 function setSites(p, sites) {
   const list = [];
   const seen = new Set();
@@ -607,23 +625,129 @@ function setSites(p, sites) {
   return list;
 }
 
-// Mirror the sites list to the public token node so the (unauthenticated)
-// worker can validate submission origins without reading users/{uid}.
 async function mirrorSitesToPub(p) {
   const db = (window.__fb || {}).db;
   if (!db || !p || !p.accessToken) return;
   const list = getSites(p);
   await set(ref(db, "pub/" + p.accessToken + "/siteUrls"), list);
-  // Keep the legacy single node in sync (first site) for old readers.
   await set(ref(db, "pub/" + p.accessToken + "/siteUrl"), list.length ? list[0] : null);
+}
+
+/* ---------- Security Alerts ---------- */
+function startOtpTimer() {
+  if (window.__otpTimer) clearInterval(window.__otpTimer);
+  const otpExpiresAt = window.__otpExpiresAt || (Date.now() + 5 * 60 * 1000);
+  window.__otpExpiresAt = otpExpiresAt;
+
+  window.__otpTimer = setInterval(() => {
+    const remaining = Math.max(0, Math.floor((otpExpiresAt - Date.now()) / 1000));
+    const m = Math.floor(remaining / 60).toString().padStart(2, "0");
+    const s = (remaining % 60).toString().padStart(2, "0");
+    const timerEl = $("#sec-otp-timer");
+    if (timerEl) timerEl.textContent = m + ":" + s;
+    if (remaining <= 0) {
+      clearInterval(window.__otpTimer);
+      window.__otpTimer = null;
+      window.__securityOtpPending = false;
+      const p = window.__profile;
+      if (p) renderSecurityAlerts(p);
+    }
+  }, 1000);
+}
+
+function renderSecurityAlerts(p) {
+  if (!p) return;
+  window.__profile = p;
+
+  $("#sec-disp-name").textContent = p.name || "—";
+  $("#sec-disp-email").textContent = p.email;
+  $("#sec-disp-uid").textContent = p.uid || "—";
+  $("#sec-disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
+  $("#sec-disp-plan").textContent = p.plan || "free";
+
+  const label = p.name || p.email || "";
+  $("#user-avatar").textContent = label ? label.trim().charAt(0).toUpperCase() : "?";
+  $("#top-uid").textContent = p.name || p.email || "";
+  $("#profile-dropdown-email").textContent = p.email || "—";
+
+  const tgLinked = !!p.telegram_chat_id;
+  const tgLinkStatus = $("#sec-tg-link-status");
+  if (tgLinkStatus) {
+    tgLinkStatus.innerHTML = tgLinked
+      ? '<span class="badge ok">Linked</span>'
+      : '<span class="badge warn">Not Linked</span>';
+  }
+
+  if (tgLinked) {
+    $("#sec-tg-setup-section").classList.add("inactive");
+    $("#sec-tg-setup-section").classList.remove("active");
+    $("#sec-tg-linked-section").classList.add("active");
+    $("#sec-tg-linked-username").textContent = "@" + (p.telegram || "—");
+    $("#sec-tg-linked-chatid").textContent = p.telegram_chat_id || "—";
+  } else {
+    $("#sec-tg-setup-section").classList.remove("inactive");
+    $("#sec-tg-setup-section").classList.add("active");
+    $("#sec-tg-linked-section").classList.remove("active");
+  }
+
+  if (p._accessCode && p._accessCodeExpiresAt && p._accessCodeExpiresAt > Date.now()) {
+    const display = $("#sec-access-code-display");
+    const timer = $("#sec-access-code-timer");
+    if (display && timer) {
+      display.textContent = p._accessCode;
+      display.classList.remove("hide");
+    }
+  }
+
+  const securityApiKey = p.securityApiKey || "";
+  const apikeyNotIssued = $("#sec-apikey-not-issued");
+  const apikeyOtpSection = $("#sec-apikey-otp-section");
+  const apikeyIssued = $("#sec-apikey-issued");
+  const issueBtn = $("#sec-issue-apikey-btn");
+
+  if (securityApiKey) {
+    apikeyNotIssued.classList.remove("active");
+    apikeyOtpSection.classList.remove("active");
+    apikeyIssued.classList.add("active");
+    $("#sec-apikey-display").textContent = securityApiKey;
+    $("#sec-disp-apikey-status").innerHTML = '<span class="badge ok">Issued</span>';
+  } else if (window.__securityOtpPending) {
+    apikeyNotIssued.classList.remove("active");
+    apikeyOtpSection.classList.add("active");
+    apikeyIssued.classList.remove("active");
+    $("#sec-disp-apikey-status").innerHTML = '<span class="badge warn">Pending OTP</span>';
+  } else {
+    apikeyNotIssued.classList.add("active");
+    apikeyOtpSection.classList.remove("active");
+    apikeyIssued.classList.remove("active");
+    $("#sec-disp-apikey-status").innerHTML = '<span class="badge warn">Not Issued</span>';
+  }
+
+  if (issueBtn) {
+    issueBtn.disabled = !tgLinked || !!securityApiKey;
+    if (!tgLinked) {
+      issueBtn.textContent = "Issue API Key (Requires Telegram Link)";
+    } else if (securityApiKey) {
+      issueBtn.textContent = "API Key Already Issued";
+    } else {
+      issueBtn.textContent = "Issue Security Alerts API Key";
+    }
+  }
+}
+function renderSettings(p) {
+  if (!p) return;
+  $("#set-disp-name").textContent = p.name || "—";
+  $("#set-disp-email").textContent = p.email || "—";
+  $("#set-disp-uid").textContent = p.uid || "—";
+  $("#set-disp-created").textContent = new Date(p.createdAt).toLocaleDateString();
+  $("#set-disp-plan").textContent = p.plan || "free";
+  $("#set-name").value = p.name || "";
+  $("#set-telegram").value = p.telegram || "";
 }
 
 /* ---------- Wire up ---------- */
 function bindUI() {
-  $("#tab-signin").onclick = () => switchTab("in");
-  $("#tab-signup").onclick = () => switchTab("up");
-
-  // Profile avatar dropdown (shows the logout action)
+  // Profile dropdown
   $("#profile-trigger").onclick = (e) => {
     e.stopPropagation();
     const menu = $("#profile-menu");
@@ -644,6 +768,44 @@ function bindUI() {
     }
   });
 
+  // Nav links
+  document.querySelectorAll(".nav-link").forEach(link => {
+    link.onclick = (e) => {
+      e.preventDefault();
+      const section = link.getAttribute("data-section");
+      if (section === "messaging") {
+        renderMessagingDashboard();
+        showSection("messaging");
+      } else if (section === "security-alerts") {
+        showSection("security-alerts");
+        const p = currentProfile();
+        if (p) renderSecurityAlerts(p);
+      } else if (section === "settings") {
+        const p = currentProfile();
+        if (p) renderSettings(p);
+        showSection("settings");
+      } else {
+        showLanding();
+      }
+    };
+  });
+
+  // Guest nav buttons
+  $("#nav-login-btn").onclick = (e) => { e.preventDefault(); showLogin(); };
+  $("#nav-signup-btn").onclick = (e) => { e.preventDefault(); showSignup(); };
+
+  // Landing page handlers
+  $("#auth-submit").onclick = (e) => { e.preventDefault(); showSignup(); };
+
+  document.querySelectorAll(".goto-login").forEach(el => {
+    el.onclick = (e) => { e.preventDefault(); showLogin(); };
+  });
+
+  document.querySelectorAll(".goto-signup").forEach(el => {
+    el.onclick = (e) => { e.preventDefault(); showSignup(); };
+  });
+
+  // Google on landing goes to signup flow
   $("#auth-google").onclick = async () => {
     if (!(await verifyRecaptcha($("#auth-google")))) return;
     await withLoading($("#auth-google"), "Connecting…", async () => {
@@ -656,37 +818,13 @@ function bindUI() {
     });
   };
 
-  $("#auth-submit").onclick = async () => {
-    const email = $("#auth-email").value.trim();
-    const pass = $("#auth-pass").value;
-    const isUp = $("#auth-mode").value === "up";
-
-    if (isUp) {
-      const name = $("#auth-name").value.trim();
-      const tg = $("#auth-tg").value.trim();
-      const pass2 = $("#auth-pass2").value;
-      if (!name) return toast("Enter your full name");
-      if (!email || !pass) return toast("Enter email and password");
-      if (pass.length < 6) return toast("Password must be at least 6 characters");
-      if (pass !== pass2) return toast("Passwords do not match");
-      // Show a visible "Verifying you're human…" status while invisible
-      // reCAPTCHA v3 / App Check runs its assessment.
-      if (!(await verifyRecaptcha($("#auth-submit")))) return;
-      await withLoading($("#auth-submit"), "Creating account…", async () => {
-        try {
-          const u = await signUp(email, pass, name, tg);
-          await onLogin(u);
-        } catch (e) {
-          toast(friendlyError(e));
-        }
-      });
-      return;
-    }
-
+  // Standalone login form
+  $("#login-submit").onclick = async () => {
+    const email = $("#login-email").value.trim();
+    const pass = $("#login-pass").value;
     if (!email || !pass) return toast("Enter email and password");
-    // Run the invisible reCAPTCHA check with visible button feedback first.
-    if (!(await verifyRecaptcha($("#auth-submit")))) return;
-    await withLoading($("#auth-submit"), "Signing in…", async () => {
+    if (!(await verifyRecaptcha($("#login-submit")))) return;
+    await withLoading($("#login-submit"), "Signing in…", async () => {
       try {
         const u = await signIn(email, pass);
         await onLogin(u);
@@ -696,24 +834,95 @@ function bindUI() {
     });
   };
 
-  // Enter-key submits the auth form from any of its inputs.
-  ["auth-email", "auth-pass", "auth-pass2", "auth-name", "auth-tg"].forEach((id) => {
+  // Standalone signup form
+  $("#signup-submit").onclick = async () => {
+    const name = $("#signup-name").value.trim();
+    const tg = $("#signup-tg").value.trim();
+    const email = $("#signup-email").value.trim();
+    const pass = $("#signup-pass").value;
+    const pass2 = $("#signup-pass2").value;
+    if (!name) return toast("Enter your full name");
+    if (!email || !pass) return toast("Enter email and password");
+    if (pass.length < 6) return toast("Password must be at least 6 characters");
+    if (pass !== pass2) return toast("Passwords do not match");
+    if (!(await verifyRecaptcha($("#signup-submit")))) return;
+    await withLoading($("#signup-submit"), "Creating account…", async () => {
+      try {
+        const u = await signUp(email, pass, name, tg);
+        await onLogin(u);
+      } catch (e) {
+        toast(friendlyError(e));
+      }
+    });
+  };
+
+  // Google signup
+  $("#signup-google").onclick = async () => {
+    if (!(await verifyRecaptcha($("#signup-google")))) return;
+    await withLoading($("#signup-google"), "Connecting…", async () => {
+      try {
+        const u = await signInWithGoogle();
+        await onLogin(u);
+      } catch (e) {
+        toast(friendlyError(e));
+      }
+    });
+  };
+
+  // Google login
+  $("#login-google").onclick = async () => {
+    if (!(await verifyRecaptcha($("#login-google")))) return;
+    await withLoading($("#login-google"), "Connecting…", async () => {
+      try {
+        const u = await signInWithGoogle();
+        await onLogin(u);
+      } catch (e) {
+        toast(friendlyError(e));
+      }
+    });
+  };
+
+  // Google on landing page
+  $("#auth-google").onclick = async () => {
+    if (!(await verifyRecaptcha($("#auth-google")))) return;
+    await withLoading($("#auth-google"), "Connecting…", async () => {
+      try {
+        const u = await signInWithGoogle();
+        await onLogin(u);
+      } catch (e) {
+        toast(friendlyError(e));
+      }
+    });
+  };
+
+  // Enter-key for auth forms
+  ["login-email", "login-pass", "signup-email", "signup-pass", "signup-pass2", "signup-name", "signup-tg"].forEach((id) => {
     const el = $("#" + id);
     if (el) el.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") $("#auth-submit").click();
+      if (e.key === "Enter") {
+        if (id === "login-email" || id === "login-pass") $("#login-submit").click();
+        else $("#signup-submit").click();
+      }
     });
   });
 
+  // Logout
   $("#logout").onclick = async () => {
     const auth = (window.__fb || {}).auth;
     if (!demoMode() && auth) await signOut(auth);
     currentUser = null;
     window.__profile = null;
-    showAuth();
+    if (window.__metaTimer) clearInterval(window.__metaTimer);
+    if (window.__accessCodeTimer) clearInterval(window.__accessCodeTimer);
+    hideAllSections();
+    updateNavForGuest();
+    $("#landing-view").classList.remove("hide");
+    toast("Logged out");
   };
 
-  $("#tg-check").onclick = async () => {
-    const btn = $("#tg-check");
+  // Messaging dashboard handlers
+  $("#msg-tg-check").onclick = async () => {
+    const btn = $("#msg-tg-check");
     if (btn && btn.classList.contains("linked-success")) return;
     if (btn && btn.classList.contains("spinning")) return;
 
@@ -744,21 +953,15 @@ function bindUI() {
       }
 
       if (linked) {
-        $("#tg-status").className = "badge ok";
-        $("#tg-status").textContent = "Linked";
-        const accessSection = $("#access-code-section");
+        const accessSection = $("#msg-access-code-section");
         if (accessSection) accessSection.classList.add("hide");
         const fresh = await getProfile(currentUser);
         if (fresh) {
-          await clearUsedAccessCode(currentUser, fresh);
-          renderProfile(fresh);
+          window.__profile = fresh;
+          renderMessagingDashboard();
         }
         toast("Telegram linked: " + chatId);
       } else {
-        $("#tg-status").className = "badge warn";
-        $("#tg-status").textContent = "Not Linked";
-        const accessSection = $("#access-code-section");
-        if (accessSection) accessSection.classList.remove("hide");
         toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
       }
     } finally {
@@ -774,8 +977,8 @@ function bindUI() {
     }
   };
 
-  $("#regen-access-code").onclick = async () => {
-    await withLoading($("#regen-access-code"), "Refreshing…", async () => {
+  $("#msg-regen-access-code").onclick = async () => {
+    await withLoading($("#msg-regen-access-code"), "Refreshing…", async () => {
       const p = await getProfile(currentUser);
       const db = (window.__fb || {}).db;
       if (!db || !p || !p.accessToken) return toast("Access token not ready");
@@ -789,17 +992,14 @@ function bindUI() {
           expiresAt: p._accessCodeExpiresAt,
         });
       } catch (_) {}
-      renderProfile(p);
+      window.__profile = p;
+      renderMessagingDashboard();
       toast("New access code generated");
     });
   };
 
-  // Add a website to the account's registered sites list. The token accepts
-  // submissions from any registered origin. Origins are stored (scheme + host
-  // + port) so the worker's origin-based site authentication
-  // regardless of any path.
-  $("#site-save").onclick = async () => {
-    const raw = $("#site-url").value.trim();
+  $("#msg-site-save").onclick = async () => {
+    const raw = $("#msg-site-url").value.trim();
     if (!raw) return toast("Enter your website URL");
     if (!isValidSiteUrl(raw)) return toast("Include the full URL, e.g. https://yoursite.com");
     let origin;
@@ -808,7 +1008,7 @@ function bindUI() {
     } catch (_) {
       return toast("Enter a valid URL");
     }
-    await withLoading($("#site-save"), "Adding…", async () => {
+    await withLoading($("#msg-site-save"), "Adding…", async () => {
       const p = await getProfile(currentUser);
       const sites = getSites(p);
       if (sites.some((s) => s.toLowerCase() === origin.toLowerCase())) {
@@ -818,18 +1018,15 @@ function bindUI() {
       sites.push(origin);
       setSites(p, sites);
       await saveProfile(currentUser, p);
-      // Mirror the sites list onto the public token node so the worker can
-      // validate submission origins without reading the private users/{uid}
-      // node (which is locked to the owner's auth).
       await mirrorSitesToPub(p);
-      $("#site-url").value = "";
-      renderProfile(p);
+      $("#msg-site-url").value = "";
+      window.__profile = p;
+      renderMessagingDashboard();
       toast("Site added");
     });
   };
 
-  // Remove a registered site (delegated click on the list).
-  $("#site-list").addEventListener("click", async (e) => {
+  $("#msg-site-list").addEventListener("click", async (e) => {
     const btn = e.target.closest(".site-remove");
     if (!btn) return;
     const idx = parseInt(btn.getAttribute("data-site-index"), 10);
@@ -841,43 +1038,42 @@ function bindUI() {
     setSites(p, sites);
     await saveProfile(currentUser, p);
     await mirrorSitesToPub(p);
-    renderProfile(p);
+    window.__profile = p;
+    renderMessagingDashboard();
     toast("Removed " + removed);
   });
 
-  $("#copy-key").onclick = () => copy($("#disp-apikey").textContent, $("#copy-key"));
-  $("#copy-snippet").onclick = () => copy(window.__lastSnippet || "", $("#copy-snippet"));
-  $("#copy-snippet-2").onclick = () => copy(window.__lastSnippet || "", $("#copy-snippet-2"));
+  $("#msg-copy-key").onclick = () => copy($("#msg-disp-apikey").textContent, $("#msg-copy-key"));
+  $("#msg-copy-snippet").onclick = () => copy(window.__lastSnippet || "", $("#msg-copy-snippet"));
+  $("#msg-copy-snippet-2").onclick = () => copy(window.__lastSnippet || "", $("#msg-copy-snippet-2"));
+  $("#msg-test-msg-btn").onclick = sendTestMessage;
+  $("#msg-test-msg-btn-2").onclick = sendTestMessage;
 
-  $("#test-msg-btn").onclick = sendTestMessage;
-  $("#test-msg-btn-2").onclick = sendTestMessage;
-
-  // Finish-setup gating: both checkboxes must be ticked before the user can
-  // complete onboarding.
   const refreshFinish = () => {
     const p = currentProfile();
     const ready = p && p.setupComplete ? true
-      : ($("#received-check").checked && $("#terms-check").checked);
-    $("#finish-setup").disabled = !ready;
+      : ($("#msg-received-check").checked && $("#msg-terms-check").checked);
+    $("#msg-finish-setup").disabled = !ready;
   };
-  $("#received-check").onchange = refreshFinish;
-  $("#terms-check").onchange = refreshFinish;
+  $("#msg-received-check").onchange = refreshFinish;
+  $("#msg-terms-check").onchange = refreshFinish;
 
-  $("#finish-setup").onclick = async () => {
+  $("#msg-finish-setup").onclick = async () => {
     const p = currentProfile() || (await getProfile(currentUser));
-    if (!$("#received-check").checked) return toast("Confirm you received the test message");
-    if (!$("#terms-check").checked) return toast("Please accept the Terms & Conditions");
+    if (!$("#msg-received-check").checked) return toast("Confirm you received the test message");
+    if (!$("#msg-terms-check").checked) return toast("Please accept the Terms & Conditions");
     if (!p.termsAcceptedAt) p.termsAcceptedAt = new Date().toISOString();
     p.setupComplete = true;
     await saveProfile(currentUser, p);
-    renderProfile(p);
+    window.__profile = p;
+    renderMessagingDashboard();
     toast("Setup complete — you're all set!");
   };
 
-  // Terms & Conditions modal
+  // Terms modal for messaging
   const openTerms = () => $("#terms-modal").classList.remove("hide");
   const closeTerms = () => $("#terms-modal").classList.add("hide");
-  $("#terms-open").onclick = (e) => { e.preventDefault(); openTerms(); };
+  $("#msg-terms-open").onclick = (e) => { e.preventDefault(); openTerms(); };
   $("#terms-close").onclick = closeTerms;
   $("#terms-modal").addEventListener("click", (e) => {
     if (e.target === $("#terms-modal")) closeTerms();
@@ -885,30 +1081,29 @@ function bindUI() {
   $("#terms-accept").onclick = () => {
     const p = currentProfile();
     if (p) p.termsAcceptedAt = new Date().toISOString();
-    $("#terms-check").checked = true;
+    $("#msg-terms-check").checked = true;
     closeTerms();
     refreshFinish();
     toast("Terms accepted");
   };
 
-  // Re-open the setup flow from the live dashboard to edit settings.
-  $("#edit-settings").onclick = () => {
+  $("#msg-edit-settings").onclick = () => {
     const p = currentProfile();
     if (p) { p.setupComplete = false; saveProfile(currentUser, p); }
-    renderProfile(p);
+    window.__profile = p;
+    renderMessagingDashboard();
   };
 
-  $("#regen").onclick = async () => {
+  $("#msg-regen").onclick = async () => {
     const ok = confirm(
       "Regenerating your access token will break any install snippet already live on a site until you update it there too. Continue?"
     );
     if (!ok) return;
-    await withLoading($("#regen"), "Regenerating…", async () => {
+    await withLoading($("#msg-regen"), "Regenerating…", async () => {
       const p = await getProfile(currentUser);
       const oldToken = p.accessToken;
       const newToken = accessToken();
       p.accessToken = newToken;
-      // apiKey is preserved for future use.
       await saveProfile(currentUser, p);
 
       const db = (window.__fb || {}).db;
@@ -936,37 +1131,389 @@ function bindUI() {
         }
       }
 
-      // Regenerating the token clears any previous blocked/exposed state.
       p.blocked = false;
       p.exposedChances = 0;
       await saveProfile(currentUser, p);
-
-      renderProfile(p);
+      window.__profile = p;
+      renderMessagingDashboard();
       toast("New access token generated — update your install snippet");
+    });
+  };
+
+  // Settings handlers
+  $("#set-save-profile").onclick = async () => {
+    await withLoading($("#set-save-profile"), "Saving…", async () => {
+      const p = await getProfile(currentUser);
+      const name = $("#set-name").value.trim();
+      const telegram = $("#set-telegram").value.trim();
+      if (!name) return toast("Enter your name");
+      p.name = name;
+      p.telegram = (telegram || "").replace(/^@/, "").trim().toLowerCase();
+      await saveProfile(currentUser, p);
+      window.__profile = p;
+      renderSettings(p);
+      renderMessagingDashboard();
+      toast("Profile updated");
+    });
+  };
+
+  $("#set-delete-account").onclick = async () => {
+    const ok = confirm("Are you sure? This will permanently delete your account and all data. This cannot be undone.");
+    if (!ok) return;
+    await withLoading($("#set-delete-account"), "Deleting…", async () => {
+      const auth = (window.__fb || {}).auth;
+      const db = (window.__fb || {}).db;
+      const p = await getProfile(currentUser);
+
+      // Delete Firebase data
+      if (db && p && p.accessToken) {
+        try { await remove(ref(db, "pub/" + p.accessToken)); } catch (_) {}
+        try { await remove(ref(db, "users/" + p.uid)); } catch (_) {}
+        try { await remove(ref(db, "accesscode/")); } catch (_) {}
+      }
+
+      // Delete auth user
+      if (auth && currentUser) {
+        try { await deleteUser(currentUser); } catch (_) {}
+      }
+
+      // Clear local storage
+      if (demoMode() && p) {
+        localStorage.removeItem("tgx_profile_" + p.uid);
+        localStorage.removeItem("tgx_user_" + p.uid);
+      }
+
+      currentUser = null;
+      window.__profile = null;
+      if (window.__metaTimer) clearInterval(window.__metaTimer);
+      if (window.__accessCodeTimer) clearInterval(window.__accessCodeTimer);
+      showLanding();
+      toast("Account deleted");
+    });
+  };
+
+  // Security alerts handlers
+  $("#sec-tg-check").onclick = async () => {
+    const btn = $("#sec-tg-check");
+    if (btn && btn.classList.contains("linked-success")) return;
+    if (btn && btn.classList.contains("spinning")) return;
+
+    btn.classList.add("spinning");
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = "Checking…";
+
+    let linked = false;
+    let chatId = "";
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const p = await getProfile(currentUser);
+        if (!p) {
+          toast("Profile not found");
+          return;
+        }
+        chatId = p.telegram_chat_id || "";
+        if (chatId) {
+          linked = true;
+          break;
+        }
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 1200));
+        }
+      }
+
+      if (linked) {
+        const accessSection = $("#sec-access-code-section");
+        if (accessSection) accessSection.classList.add("hide");
+        const fresh = await getProfile(currentUser);
+        if (fresh) {
+          window.__profile = fresh;
+          renderSecurityAlerts(fresh);
+        }
+        toast("Telegram linked: " + chatId);
+      } else {
+        toast("Not linked yet — send /config to @TrigifyXbot in Telegram and enter the access code");
+      }
+    } finally {
+      btn.classList.remove("spinning");
+      if (linked) {
+        btn.classList.add("linked-success");
+        btn.textContent = "Linked Successfully";
+        btn.disabled = true;
+      } else {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    }
+  };
+
+  $("#sec-regen-access-code").onclick = async () => {
+    await withLoading($("#sec-regen-access-code"), "Refreshing…", async () => {
+      const p = await getProfile(currentUser);
+      const db = (window.__fb || {}).db;
+      if (!db || !p || !p.accessToken) return toast("Access token not ready");
+      const code = accessCode();
+      p._accessCode = code;
+      p._accessCodeExpiresAt = Date.now() + 5 * 60 * 1000;
+      try {
+        await set(ref(db, "accesscode/" + code), {
+          token: p.accessToken,
+          ttl: Date.now(),
+          expiresAt: p._accessCodeExpiresAt,
+        });
+      } catch (_) {}
+      window.__profile = p;
+      renderSecurityAlerts(p);
+      toast("New access code generated");
+    });
+  };
+
+  $("#sec-issue-apikey-btn").onclick = async () => {
+    const p = await getProfile(currentUser);
+    if (!p || !p.telegram_chat_id) {
+      toast("Please link your Telegram first");
+      return;
+    }
+
+    await withLoading($("#sec-issue-apikey-btn"), "Sending OTP…", async () => {
+      try {
+        const ENDPOINT = (ENV.apiBase || "").replace(/\/$/, "");
+        const res = await fetch(
+          ENDPOINT + "/api/security-alerts/send-otp",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ accessToken: p.accessToken })
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Failed to send OTP" }));
+          throw new Error(err.error || "Failed to send OTP");
+        }
+
+        window.__securityOtpPending = true;
+        window.__otpExpiresAt = Date.now() + 5 * 60 * 1000;
+        startOtpTimer();
+        renderSecurityAlerts(p);
+        toast("OTP sent to your Telegram");
+      } catch (e) {
+        toast(e.message || "Failed to send OTP");
+      }
+    });
+  };
+
+  $("#sec-verify-otp-btn").onclick = async () => {
+    const otpInput = $("#sec-otp-input");
+    const otp = otpInput.value.trim();
+
+    if (!otp || !/^\d{6}$/.test(otp)) {
+      toast("Enter a valid 6-digit OTP");
+      return;
+    }
+
+    await withLoading($("#sec-verify-otp-btn"), "Verifying…", async () => {
+      try {
+        const p = await getProfile(currentUser);
+        if (!p || !p.accessToken) {
+          toast("Profile not found");
+          return;
+        }
+
+        const ENDPOINT = (ENV.apiBase || "").replace(/\/$/, "");
+        const res = await fetch(
+          ENDPOINT + "/api/security-alerts/verify-otp",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accessToken: p.accessToken,
+              otp: otp
+            })
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "OTP verification failed" }));
+          throw new Error(err.error || "OTP verification failed");
+        }
+
+        const data = await res.json();
+        window.__securityOtpPending = false;
+        if (window.__otpTimer) clearInterval(window.__otpTimer);
+        window.__otpTimer = null;
+
+        p.securityApiKey = data.securityApiKey;
+        await saveProfile(currentUser, p);
+        window.__profile = p;
+
+        renderSecurityAlerts(p);
+        toast("Security Alerts API key issued successfully!");
+      } catch (e) {
+        toast(e.message || "OTP verification failed");
+      }
+    });
+  };
+
+  $("#sec-cancel-otp-btn").onclick = () => {
+    window.__securityOtpPending = false;
+    if (window.__otpTimer) clearInterval(window.__otpTimer);
+    window.__otpTimer = null;
+    const p = window.__profile;
+    if (p) renderSecurityAlerts(p);
+  };
+
+  $("#sec-copy-apikey").onclick = () => {
+    copy($("#sec-apikey-display").textContent, $("#sec-copy-apikey"));
+  };
+
+  $("#sec-copy-snippet").onclick = () => {
+    copy($("#sec-snippet").textContent, $("#sec-copy-snippet"));
+  };
+
+  $("#sec-copy-example-payload").onclick = () => {
+    copy($("#sec-example-payload").textContent, $("#sec-copy-example-payload"));
+  };
+
+  $("#sec-send-test-alert").onclick = async () => {
+    const p = await getProfile(currentUser);
+    if (!p || !p.securityApiKey) {
+      toast("Issue a Security Alerts API key first");
+      return;
+    }
+
+    const alertType = $("#sec-test-alert-type").value;
+    const severity = $("#sec-test-severity").value;
+    const title = $("#sec-test-title").value.trim() || "Test Alert";
+    const message = $("#sec-test-message").value.trim() || "This is a test security alert from TrigifyX.";
+
+    await withLoading($("#sec-send-test-alert"), "Sending…", async () => {
+      try {
+        const ENDPOINT = (ENV.apiBase || "").replace(/\/$/, "");
+        const res = await fetch(
+          ENDPOINT + "/api/security-alerts/send",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + p.securityApiKey
+            },
+            body: JSON.stringify({
+              alert_type: alertType,
+              severity: severity,
+              title: title,
+              message: message,
+              source: "dashboard_test",
+              timestamp: new Date().toISOString()
+            })
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Failed to send alert" }));
+          throw new Error(err.error || "Failed to send alert");
+        }
+
+        toast("Test alert sent to Telegram");
+        $("#sec-test-title").value = "";
+        $("#sec-test-message").value = "";
+      } catch (e) {
+        toast(e.message || "Failed to send alert");
+      }
+    });
+  };
+
+  $("#sec-regenerate-apikey").onclick = async () => {
+    const ok = confirm(
+      "Regenerating your Security Alerts API key will break any integrations using the current key. Continue?"
+    );
+    if (!ok) return;
+
+    await withLoading($("#sec-regenerate-apikey"), "Regenerating…", async () => {
+      try {
+        const p = await getProfile(currentUser);
+        const ENDPOINT = (ENV.apiBase || "").replace(/\/$/, "");
+        const res = await fetch(
+          ENDPOINT + "/api/security-alerts/regenerate",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer " + p.securityApiKey
+            },
+            body: JSON.stringify({ accessToken: p.accessToken })
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ error: "Failed to regenerate" }));
+          throw new Error(err.error || "Failed to regenerate API key");
+        }
+
+        const data = await res.json();
+        p.securityApiKey = data.securityApiKey;
+        await saveProfile(currentUser, p);
+        window.__profile = p;
+        renderSecurityAlerts(p);
+        toast("Security Alerts API key regenerated");
+      } catch (e) {
+        toast(e.message || "Failed to regenerate API key");
+      }
+    });
+  };
+
+  $("#sec-tg-unlink").onclick = async () => {
+    const ok = confirm("Unlink Telegram? You will need to re-link to issue Security Alerts API keys.");
+    if (!ok) return;
+
+    await withLoading($("#sec-tg-unlink"), "Unlinking…", async () => {
+      try {
+        const p = await getProfile(currentUser);
+        p.telegram_chat_id = "";
+        p.telegram = "";
+        await saveProfile(currentUser, p);
+        window.__profile = p;
+        renderSecurityAlerts(p);
+        toast("Telegram unlinked");
+      } catch (e) {
+        toast("Failed to unlink Telegram");
+      }
     });
   };
 }
 
-/* ---------- Helpers for site verification ---------- */
-
+/* ---------- Helpers ---------- */
 function currentProfile() {
   return window.__profile || null;
 }
 
 function switchTab(mode) {
-  $("#auth-mode").value = mode;
+  const authMode = $("#auth-mode");
+  if (authMode) authMode.value = mode;
+  const tabSignup = $("#tab-signup");
+  const tabSignin = $("#tab-signin");
+  if (!tabSignup && !tabSignin) return;
   const up = mode === "up";
-  $("#tab-signup").classList.toggle("active", up);
-  $("#tab-signin").classList.toggle("active", !up);
-  $("#auth-title").textContent = up ? "Create your TrigifyX account" : "Welcome back to TrigifyX";
-  $("#auth-submit").textContent = up ? "Sign up" : "Sign in";
+  if (tabSignup) tabSignup.classList.toggle("active", up);
+  if (tabSignin) tabSignin.classList.toggle("active", !up);
+  const authTitle = $("#auth-title");
+  if (authTitle) authTitle.textContent = up ? "Create your TrigifyX account" : "Welcome back to TrigifyX";
+  const authSubmit = $("#auth-submit");
+  if (authSubmit) authSubmit.textContent = up ? "Sign up" : "Sign in";
+  const signupOnly = $("#signup-only");
+  const signupOnly2 = $("#signup-only-2");
   const show = up ? "remove" : "add";
-  $("#signup-only").classList[show]("hide");
-  $("#signup-only-2").classList[show]("hide");
+  if (signupOnly) signupOnly.classList[show]("hide");
+  if (signupOnly2) signupOnly2.classList[show]("hide");
   if (!up) {
-    $("#auth-name").value = "";
-    $("#auth-tg").value = "";
-    $("#auth-pass2").value = "";
+    const authName = $("#auth-name");
+    const authTg = $("#auth-tg");
+    const authPass2 = $("#auth-pass2");
+    if (authName) authName.value = "";
+    if (authTg) authTg.value = "";
+    if (authPass2) authPass2.value = "";
   }
 }
 
@@ -981,15 +1528,10 @@ async function onLogin(u) {
     await saveProfile(u, p);
   }
 
-  // Backfill fields for accounts created before they existed, so returning
-  // users never get asked to redo something they already set up.
   let needsSave = false;
   if (!p.accessToken) { p.accessToken = accessToken(); needsSave = true; }
-  // The access token is revealed automatically now (no issue button), so
-  // mark it issued to reveal the install snippet. Kept for setup gating.
   if (!p.apiKeyIssued) { p.apiKeyIssued = true; needsSave = true; }
   if (typeof p.siteUrl === "undefined") { p.siteUrl = ""; needsSave = true; }
-  // Multi-site: migrate the legacy single siteUrl into a siteUrls array.
   if (!Array.isArray(p.siteUrls)) {
     p.siteUrls = p.siteUrl ? [p.siteUrl] : [];
     needsSave = true;
@@ -1001,18 +1543,14 @@ async function onLogin(u) {
   if (typeof p.exposedChances === "undefined") { p.exposedChances = 0; needsSave = true; }
   if (typeof p.submissionCount === "undefined") { p.submissionCount = 0; needsSave = true; }
   if (typeof p.lastSubmissionAt === "undefined") { p.lastSubmissionAt = null; needsSave = true; }
+  if (typeof p.securityApiKey === "undefined") { p.securityApiKey = ""; needsSave = true; }
+  if (typeof p.telegram_chat_id === "undefined") { p.telegram_chat_id = ""; needsSave = true; }
   if (needsSave) await saveProfile(u, p);
 
   window.__profile = p;
 
-  // Pull the worker-written bookkeeping from the public token node
-  // (pub/{token}/meta). The worker cannot write users/{uid} (rules
-  // restrict it to the owner), so the authoritative counters,
-  // exposure state and last submission live here. Merge into p so
-  // the dashboard reflects them.
   await mergeTokenMeta(p);
 
-  // Ensure the public lookup node exists (for the capture script).
   const db = (window.__fb || {}).db;
   if (db) {
     if (p && p.accessToken) {
@@ -1022,20 +1560,17 @@ async function onLogin(u) {
       await set(ref(db, "pub/" + p.accessToken + "/uid"), p.uid);
       await mirrorSitesToPub(p);
     }
-    // Keep the registered sites mirrored to the public token node.
     await mirrorSitesToPub(p);
   }
 
-  // Keep the dashboard live: refresh the merged meta periodically.
   if (window.__metaTimer) clearInterval(window.__metaTimer);
   window.__metaTimer = setInterval(async () => {
     if (!currentUser) return;
     const fresh = currentProfile();
     if (!fresh) return;
     await mergeTokenMeta(fresh);
-    renderProfile(fresh);
+    renderMessagingDashboard();
   }, 8000);
-
 
   if (db && p.accessToken) {
     const code = accessCode();
@@ -1050,21 +1585,17 @@ async function onLogin(u) {
     } catch (_) {}
   }
 
-  // If a Google/SSO user is missing required details, force profile completion.
   const missing = !p.name || !p.telegram;
   if (missing) {
     showProfileComplete(u, p);
     return;
   }
-  $("#disp-uid").textContent = u.uid;
-  renderProfile(p);
+
   showApp();
 }
 
 function showProfileComplete(u, p) {
-  showAuth(); // hide dashboard
-  $("#auth-view").classList.add("hide");
-  $("#complete-view").classList.remove("hide");
+  showSection("complete");
   $("#complete-email").textContent = u.email || p.email || "—";
   $("#complete-name").value = p.name || (u.displayName || "");
   $("#complete-tg").value = p.telegram || "";
@@ -1078,10 +1609,8 @@ function showProfileComplete(u, p) {
       p.telegram = (tg || "").replace(/^@/, "").trim().toLowerCase();
       await saveProfile(u, p);
       window.__profile = p;
-      $("#complete-view").classList.add("hide");
-      $("#disp-uid").textContent = u.uid;
-      renderProfile(p);
       showApp();
+      toast("Profile complete!");
     });
   };
 }
@@ -1093,18 +1622,18 @@ function boot() {
   booted = true;
   try {
     bindUI();
-    switchTab("up");
   } catch (e) {
     console.error("[app] bindUI failed:", e);
   }
+
   const auth = (window.__fb || {}).auth;
   if (!demoMode() && auth) {
     onAuthStateChanged(auth, async (u) => {
       if (u) await onLogin(u);
-      else showAuth();
+      else showLanding();
     });
   } else {
-    showAuth();
+    showLanding();
   }
 }
 

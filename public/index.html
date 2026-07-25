@@ -3,9 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>TrigifyX | Trigger • Notify • Automate</title>
-
     <meta name="description" content="Connect any website form to Telegram in seconds. Receive instant notifications from your forms using TrigifyX.">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -19,7 +17,7 @@
     <div id="env-note" class="note hide"></div>
 
     <!-- ===========================================================
-         NAVBAR
+         UNIFIED NAVBAR
     ============================================================ -->
     <header class="topbar">
         <div class="brand">
@@ -30,14 +28,20 @@
             </div>
         </div>
 
-        <nav class="desktop-nav">
-            <a href="#features">Features</a>
-            <a href="#how">How it Works</a>
-            <a href="/help/">Help</a>
-            <a href="#app-view">Dashboard</a>
+        <nav class="desktop-nav" id="main-nav">
+            <a href="#" data-section="landing" class="nav-link active landing-only">Home</a>
+            <a href="#" data-section="messaging" class="nav-link protected-nav hide">Form Messaging</a>
+            <a href="#" data-section="security-alerts" class="nav-link protected-nav hide">Security Alerts</a>
         </nav>
 
         <div class="right" id="topbar-right">
+            <!-- Logged OUT -->
+            <div id="nav-guest" class="hide">
+                <a href="#" class="btn ghost" id="nav-login-btn">Log In</a>
+                <a href="#" class="btn" id="nav-signup-btn">Sign Up</a>
+            </div>
+
+            <!-- Logged IN -->
             <div class="profile-menu hide" id="profile-menu">
                 <button class="profile-trigger" id="profile-trigger" type="button" aria-haspopup="true" aria-expanded="false">
                     <span class="avatar" id="user-avatar">•</span>
@@ -58,10 +62,9 @@
     <main class="wrap">
 
         <!-- ===========================================================
-             PUBLIC LANDING (sign up / sign in + marketing content)
-             Hidden once a user is authenticated.
+             LANDING PAGE (public marketing content)
         ============================================================ -->
-        <section id="auth-view">
+        <section id="landing-view">
 
             <div class="auth-split">
 
@@ -70,13 +73,13 @@
                     <div class="hero-logo">
                         <img src="images/trigifyX.png" alt="TrigifyX">
                     </div>
-                    <span class="hero-badge">Instant Telegram Form Notifications</span>
-                    <h1>Connect any website form <span>to Telegram</span></h1>
+                    <span class="hero-badge">Trigger • Notify • Automate</span>
+                    <h1>Form Messaging <span>&</span> Security Alerts <span>via Telegram</span></h1>
                     <p class="lead">
-                        TrigifyX is the fastest way to know the moment someone fills out
-                        a form on your site. No backend, no inbox-checking, no missed
-                        leads — just paste one script tag and every submission lands in
-                        your Telegram chat in real time.
+                        TrigifyX delivers two powerful notification experiences through Telegram:
+                        <strong>Form Messaging</strong> forwards website form submissions instantly,
+                        and <strong>Security Alerts</strong> delivers real-time security system events —
+                        no email delays, no missed leads, no missed incidents.
                     </p>
 
                     <div class="use-case-chips">
@@ -84,29 +87,32 @@
                         <span>Waitlists</span>
                         <span>Lead capture</span>
                         <span>Surveys</span>
-                        <span>Bookings</span>
+                        <span>Intrusion Alerts</span>
+                        <span>Camera Motion</span>
+                        <span>Access Control</span>
+                        <span>Fire & Safety</span>
                     </div>
 
                     <div class="intro-preview">
                         <div class="intro-preview-step">
                             <span class="intro-preview-num">1</span>
                             <div>
-                                <h4>Sign up</h4>
-                                <p>Create a free account, no credit card needed.</p>
+                                <h4>Create Account</h4>
+                                <p>One account for both Form Messaging and Security Alerts.</p>
                             </div>
                         </div>
                         <div class="intro-preview-step">
                             <span class="intro-preview-num">2</span>
                             <div>
-                                <h4>Paste the snippet</h4>
-                                <p>One script tag, works with any HTML form.</p>
+                                <h4>Connect Telegram</h4>
+                                <p>Link @TrigifyXbot and verify with OTP for Security Alerts.</p>
                             </div>
                         </div>
                         <div class="intro-preview-step">
                             <span class="intro-preview-num">3</span>
                             <div>
-                                <h4>Get notified</h4>
-                                <p>Every submission appears in Telegram instantly.</p>
+                                <h4>Get Notified</h4>
+                                <p>Form submissions and security alerts appear in Telegram instantly.</p>
                             </div>
                         </div>
                     </div>
@@ -118,25 +124,19 @@
                         </div>
                         <div>
                             <strong>1</strong>
-                            <span>Script tag</span>
+                            <span>Account</span>
                         </div>
                         <div>
-                            <strong>100%</strong>
-                            <span>Form coverage</span>
+                            <strong>2</strong>
+                            <span>Features</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- AUTH CARD -->
+                <!-- LANDING AUTH CARD -->
                 <div class="card auth-card">
-                    <div class="pill-tabs">
-                        <div class="pill active" id="tab-signup">Sign Up</div>
-                        <div class="pill" id="tab-signin">Sign In</div>
-                    </div>
-
-                    <h2 id="auth-title">Create your account</h2>
-                    <p class="muted auth-card-subtitle">Free to start — get your API key in under a minute.</p>
-                    <input type="hidden" id="auth-mode" value="up">
+                    <h2>Welcome to TrigifyX</h2>
+                    <p class="muted auth-card-subtitle">One account for Form Messaging and Security Alerts.</p>
 
                     <button class="btn google-btn block" id="auth-google">
                         <span class="g-icon">G</span>
@@ -145,28 +145,12 @@
 
                     <div class="divider"><span>OR</span></div>
 
-                    <div id="signup-only">
-                        <label>Full Name</label>
-                        <input id="auth-name" type="text" placeholder="John Doe">
+                    <button class="btn block mt" id="auth-submit">Get Started</button>
 
-                        <label>Telegram Username</label>
-                        <input id="auth-tg" type="text" placeholder="@username">
-                    </div>
-
-                    <label>Email Address</label>
-                    <input id="auth-email" type="email" placeholder="you@example.com">
-
-                    <label>Password</label>
-                    <input id="auth-pass" type="password" placeholder="••••••••">
-
-                    <div id="signup-only-2">
-                        <label>Confirm Password</label>
-                        <input id="auth-pass2" type="password" placeholder="••••••••">
-                    </div>
-
-                    <button class="btn block mt" id="auth-submit">Create Account</button>
-
-                    <p class="muted center mt">Protected by Firebase Authentication.</p>
+                    <p class="muted center mt">
+                        Already have an account?
+                        <a href="#" class="goto-login">Sign in</a>
+                    </p>
                 </div>
 
             </div>
@@ -189,6 +173,12 @@
                     <div class="feature-icon">🌐</div>
                     <h3>One Script</h3>
                     <p>Works with virtually every HTML form.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Security Alerts</h3>
+                    <p>Get instant Telegram alerts for security system events.</p>
                 </div>
             </section>
 
@@ -218,7 +208,104 @@
         </section>
 
         <!-- ===========================================================
-             COMPLETE PROFILE (first-time Google/SSO users)
+             STANDALONE LOGIN VIEW
+        ============================================================ -->
+        <section id="login-view" class="hide">
+            <div class="auth-split">
+                <div class="auth-visual">
+                    <div class="hero-logo">
+                        <img src="images/trigifyX.png" alt="TrigifyX">
+                    </div>
+                    <span class="hero-badge">Welcome Back</span>
+                    <h1>Sign in to <span>TrigifyX</span></h1>
+                    <p class="lead">
+                        Access your dashboard, manage your API keys, and configure
+                        both Form Messaging and Security Alerts.
+                    </p>
+                </div>
+
+                <div class="card auth-card">
+                    <h2>Sign In</h2>
+                    <p class="muted auth-card-subtitle">Enter your credentials to continue.</p>
+
+                    <button class="btn google-btn block" id="login-google">
+                        <span class="g-icon">G</span>
+                        Continue with Google
+                    </button>
+
+                    <div class="divider"><span>OR</span></div>
+
+                    <label>Email Address</label>
+                    <input id="login-email" type="email" placeholder="you@example.com">
+
+                    <label>Password</label>
+                    <input id="login-pass" type="password" placeholder="••••••••">
+
+                    <button class="btn block mt" id="login-submit">Sign In</button>
+
+                    <p class="muted center mt">
+                        Don't have an account?
+                        <a href="#" class="goto-signup">Sign up</a>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===========================================================
+             STANDALONE SIGNUP VIEW
+        ============================================================ -->
+        <section id="signup-view" class="hide">
+            <div class="auth-split">
+                <div class="auth-visual">
+                    <div class="hero-logo">
+                        <img src="images/trigifyX.png" alt="TrigifyX">
+                    </div>
+                    <span class="hero-badge">Get Started</span>
+                    <h1>Create your <span>TrigifyX</span> account</h1>
+                    <p class="lead">
+                        One account for both Form Messaging and Security Alerts.
+                        Free to start — no credit card required.
+                    </p>
+                </div>
+
+                <div class="card auth-card">
+                    <h2>Create Account</h2>
+                    <p class="muted auth-card-subtitle">Free to start — get your API key in under a minute.</p>
+
+                    <button class="btn google-btn block" id="signup-google">
+                        <span class="g-icon">G</span>
+                        Continue with Google
+                    </button>
+
+                    <div class="divider"><span>OR</span></div>
+
+                    <label>Full Name</label>
+                    <input id="signup-name" type="text" placeholder="John Doe">
+
+                    <label>Telegram Username</label>
+                    <input id="signup-tg" type="text" placeholder="@username">
+
+                    <label>Email Address</label>
+                    <input id="signup-email" type="email" placeholder="you@example.com">
+
+                    <label>Password</label>
+                    <input id="signup-pass" type="password" placeholder="••••••••">
+
+                    <label>Confirm Password</label>
+                    <input id="signup-pass2" type="password" placeholder="••••••••">
+
+                    <button class="btn block mt" id="signup-submit">Create Account</button>
+
+                    <p class="muted center mt">
+                        Already have an account?
+                        <a href="#" class="goto-login">Sign in</a>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===========================================================
+             COMPLETE PROFILE
         ============================================================ -->
         <section id="complete-view" class="hide">
             <div class="card auth-card">
@@ -236,22 +323,19 @@
                 <label>Telegram Username</label>
                 <input id="complete-tg" type="text" placeholder="@username">
 
-                <button class="btn block mt" id="complete-save">Save &amp; Continue</button>
+                <button class="btn block mt" id="complete-save">Save & Continue</button>
             </div>
         </section>
 
         <!-- ===========================================================
-             DASHBOARD
-             Sequence: overview stats -> identity (sidebar) -> setup flow
-             (website -> telegram -> install), matching the actual order
-             a user completes onboarding in.
+             FORM MESSAGING DASHBOARD
         ============================================================ -->
-        <section id="app-view" class="hide">
+        <section id="messaging-view" class="hide">
 
             <div class="page-header">
                 <div>
-                    <span class="hero-badge">Dashboard</span>
-                    <h1>Welcome to TrigifyX</h1>
+                    <span class="hero-badge">Form Messaging</span>
+                    <h1>Form Messaging Dashboard</h1>
                     <p class="lead">
                         Manage your API key, connect Telegram and install TrigifyX on
                         your website in under a minute.
@@ -263,15 +347,15 @@
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Plan</h3>
-                    <p id="disp-plan">Free</p>
+                    <p id="msg-disp-plan">Free</p>
                 </div>
                 <div class="stat-card">
                     <h3>Status</h3>
-                    <p><span class="badge ok">Active</span></p>
+                    <p><span class="badge ok" id="msg-disp-status">Active</span></p>
                 </div>
                 <div class="stat-card">
                     <h3>Telegram</h3>
-                    <p id="disp-tg">—</p>
+                    <p id="msg-disp-tg">—</p>
                 </div>
             </div>
 
@@ -285,98 +369,94 @@
 
                         <div class="kv">
                             <span class="k">Name</span>
-                            <span class="v" id="disp-name">—</span>
+                            <span class="v" id="msg-disp-name">—</span>
                         </div>
                         <div class="kv">
                             <span class="k">Email</span>
-                            <span class="v" id="disp-email">—</span>
+                            <span class="v" id="msg-disp-email">—</span>
                         </div>
                         <div class="kv">
                             <span class="k">User ID</span>
-                            <span class="v" id="disp-uid">—</span>
+                            <span class="v" id="msg-disp-uid">—</span>
                         </div>
+                        <div class="kv">
+                            <span class="k">Joined</span>
+                            <span class="v" id="msg-disp-created">—</span>
+                        </div>
+
+                        <div class="kv-group hide" id="msg-acct-extra">
                             <div class="kv">
-                                <span class="k">Joined</span>
-                                <span class="v" id="disp-created">—</span>
+                                <span class="k">Websites</span>
+                                <span class="v" id="msg-acct-site">—</span>
                             </div>
-
-                            <!-- shown instead of the setup steps once site/telegram/apiKey are all configured -->
-                            <div class="kv-group hide" id="acct-extra">
-                                <div class="kv">
-                                    <span class="k">Websites</span>
-                                    <span class="v" id="acct-site">—</span>
-                                </div>
-                                <div class="kv">
-                                    <span class="k">Telegram</span>
-                                    <span class="v" id="acct-tg">—</span>
-                                </div>
-                                <div class="kv">
-                                    <span class="k">Access Token</span>
-                                    <span class="v mono" id="acct-apikey">—</span>
-                                </div>
+                            <div class="kv">
+                                <span class="k">Telegram</span>
+                                <span class="v" id="msg-acct-tg">—</span>
+                            </div>
+                            <div class="kv">
+                                <span class="k">Access Token</span>
+                                <span class="v mono" id="msg-acct-apikey">—</span>
                             </div>
                         </div>
+                    </div>
 
-                        <div class="card">
-                            <h2>Access Token</h2>
-                            <p class="lead">
-                                This token is embedded in your install snippet and identifies
-                                your Telegram destination. Keep it private.
-                            </p>
+                    <div class="card">
+                        <h2>Access Token</h2>
+                        <p class="lead">
+                            This token is embedded in your install snippet and identifies
+                            your Telegram destination. Keep it private.
+                        </p>
 
-                            <div id="apikey-revealed" class="hide">
-                                <div class="api-box">
-                                    <code id="disp-apikey">—</code>
-                                </div>
-                                <div class="row mt">
-                                    <button class="btn ghost" id="copy-key">Copy</button>
-                                    <button class="btn" id="regen">Regenerate</button>
-                                </div>
+                        <div id="msg-apikey-revealed" class="hide">
+                            <div class="api-box">
+                                <code id="msg-disp-apikey">—</code>
+                            </div>
+                            <div class="row mt">
+                                <button class="btn ghost" id="msg-copy-key">Copy</button>
+                                <button class="btn" id="msg-regen">Regenerate</button>
                             </div>
                         </div>
+                    </div>
 
                 </aside>
 
                 <!-- ============ MAIN: setup flow ============ -->
-                <div class="dashboard-main" id="setup-main">
+                <div class="dashboard-main" id="msg-setup-main">
 
                     <div class="section-title">
                         <h2>Connect Your Site</h2>
                         <p class="muted">Three steps to start receiving notifications.</p>
                     </div>
 
-                    <ol class="setup-flow" id="setup-flow">
+                    <ol class="setup-flow" id="msg-setup-flow">
 
-                        <!-- STEP 1: WEBSITE -->
-                        <li id="site-card" class="card setup-step">
+                        <li id="msg-site-card" class="card setup-step">
                             <h2>Your Websites</h2>
                             <p class="lead">
                                 Register every website where you use your TrigifyX
                                 access token. Your token only accepts form submissions
-                                from origins you list here — add as many sites as you
-                                need, all sharing the same access token.
+                                from origins you list here.
                             </p>
 
                             <label>Website URL</label>
                             <div class="row site-add-row">
-                                <input id="site-url" type="text" placeholder="https://yoursite.com">
-                                <button class="btn" id="site-save">Add Site</button>
+                                <input id="msg-site-url" type="text" placeholder="https://yoursite.com">
+                                <button class="btn" id="msg-site-save">Add Site</button>
                             </div>
 
-                            <ul class="site-list" id="site-list">
+                            <ul class="site-list" id="msg-site-list">
                                 <li class="empty">No sites registered yet — add your first site above.</li>
                             </ul>
                         </li>
 
-                        <!-- STEP 2: TELEGRAM -->
-                        <li id="telegram-card" class="card setup-step">
+                        <li id="msg-telegram-card" class="card setup-step">
                             <h2>Connect Telegram</h2>
                             <p class="lead">
                                 Open <strong>@TrigifyXbot</strong> in Telegram and send
                                 <code>/config</code>, then paste the 5-digit access code shown below.
                             </p>
 
-                            <div id="tg-steps">
+                            <div id="msg-tg-steps">
                                 <ol class="steps">
                                     <li>
                                         <h3>Open Telegram</h3>
@@ -390,19 +470,18 @@
                             </div>
 
                             <div class="row mt">
-                                <span class="badge ok" id="tg-status">Not Linked</span>
-                                <button class="btn" id="tg-check">Check Link</button>
+                                <span class="badge ok" id="msg-tg-status">Not Linked</span>
+                                <button class="btn" id="msg-tg-check">Check Link</button>
                             </div>
 
-                            <div class="row mt" id="access-code-section">
-                                <span class="muted">Access code (expires in <span id="access-code-timer">5:00</span>):</span>
-                                <code id="access-code-display">—</code>
-                                <button class="btn ghost" id="regen-access-code">Refresh</button>
+                            <div class="row mt" id="msg-access-code-section">
+                                <span class="muted">Access code (expires in <span id="msg-access-code-timer">5:00</span>):</span>
+                                <code id="msg-access-code-display">—</code>
+                                <button class="btn ghost" id="msg-regen-access-code">Refresh</button>
                             </div>
                         </li>
 
-                        <!-- STEP 3: INSTALL -->
-                        <li id="install-card" class="card setup-step hide">
+                        <li id="msg-install-card" class="card setup-step hide">
                             <h2>Install on Your Website</h2>
                             <p class="lead">
                                 Paste the following snippet before the closing &lt;/body&gt; tag
@@ -410,8 +489,8 @@
                             </p>
 
                             <div class="code-wrapper">
-                                <textarea id="snippet" readonly></textarea>
-                                <button class="copy" id="copy-snippet">Copy</button>
+                                <textarea id="msg-snippet" readonly></textarea>
+                                <button class="copy" id="msg-copy-snippet">Copy</button>
                             </div>
 
                             <div class="note">
@@ -420,26 +499,26 @@
                                 account.
                             </div>
 
-                            <div class="row mt" id="test-msg-row">
-                                <button class="btn ghost" id="test-msg-btn">Send Test Message</button>
-                                <span class="badge" id="test-msg-count">3 test messages left</span>
+                            <div class="row mt" id="msg-test-msg-row">
+                                <button class="btn ghost" id="msg-test-msg-btn">Send Test Message</button>
+                                <span class="badge" id="msg-test-msg-count">3 test messages left</span>
                             </div>
 
-                            <label class="check-row" id="received-row">
-                                <input type="checkbox" id="received-check">
+                            <label class="check-row" id="msg-received-row">
+                                <input type="checkbox" id="msg-received-check">
                                 <span>I have received the test message in my Telegram chat</span>
                             </label>
 
-                            <label class="check-row" id="terms-row">
-                                <input type="checkbox" id="terms-check">
+                            <label class="check-row" id="msg-terms-row">
+                                <input type="checkbox" id="msg-terms-check">
                                 <span>
                                     I have read and accept the
-                                    <a href="#" id="terms-open">Terms &amp; Conditions</a>.
+                                    <a href="#" id="msg-terms-open">Terms &amp; Conditions</a>.
                                 </span>
                             </label>
 
                             <div class="row mt">
-                                <button class="btn block" id="finish-setup" disabled>
+                                <button class="btn block" id="msg-finish-setup" disabled>
                                     Finish Setup
                                 </button>
                             </div>
@@ -449,32 +528,32 @@
 
                 </div>
 
-                <!-- ============ MAIN: live dashboard (shown after finish) ============ -->
-                <div class="dashboard-main hide" id="live-main">
+                <!-- ============ MAIN: live messaging dashboard ============ -->
+                <div class="dashboard-main hide" id="msg-live-main">
 
                     <div class="section-title">
-                        <h2>Your Dashboard</h2>
+                        <h2>Form Messaging Dashboard</h2>
                         <p class="muted">Everything is connected. You're receiving form submissions in Telegram.</p>
                     </div>
 
-                    <div class="note danger hide" id="blocked-banner">
+                    <div class="note danger hide" id="msg-blocked-banner">
                         🚫 <strong>Your access token is blocked.</strong>
                         It was blocked due to unauthorized practices or exposure.
                         Regenerate your API key to get a new token.
                     </div>
 
-                    <div class="stats-grid" id="live-stats">
+                    <div class="stats-grid" id="msg-live-stats">
                         <div class="stat-card">
                             <h3>Status</h3>
-                            <p><span class="badge ok" id="disp-status-badge">Live</span></p>
+                            <p><span class="badge ok" id="msg-disp-status-badge">Live</span></p>
                         </div>
                         <div class="stat-card">
                             <h3>Submissions</h3>
-                            <p id="disp-submissions">0</p>
+                            <p id="msg-disp-submissions">0</p>
                         </div>
                         <div class="stat-card">
                             <h3>Connected Site</h3>
-                            <p id="disp-site-short" class="site-short">—</p>
+                            <p id="msg-disp-site-short" class="site-short">—</p>
                         </div>
                     </div>
 
@@ -483,7 +562,7 @@
                         <div class="card">
                             <h2>Recent Submissions</h2>
                             <p class="muted">New form entries show up here and in your Telegram in real time.</p>
-                            <ul class="submission-log" id="submission-log">
+                            <ul class="submission-log" id="msg-submission-log">
                                 <li class="empty">No submissions yet — they'll appear the moment someone fills a form.</li>
                             </ul>
                         </div>
@@ -492,29 +571,29 @@
                             <h2>Connection</h2>
                             <div class="kv">
                                 <span class="k">Websites</span>
-                                <span class="v" id="dash-site">—</span>
+                                <span class="v" id="msg-dash-site">—</span>
                             </div>
                             <div class="kv">
                                 <span class="k">Telegram</span>
-                                <span class="v" id="dash-tg">—</span>
+                                <span class="v" id="msg-dash-tg">—</span>
                             </div>
                             <div class="kv">
                                 <span class="k">Terms accepted</span>
-                                <span class="v" id="dash-terms">—</span>
+                                <span class="v" id="msg-dash-terms">—</span>
                             </div>
                             <div class="kv">
                                 <span class="k">Exposure attempts</span>
-                                <span class="v" id="dash-exposed">0 / 3</span>
+                                <span class="v" id="msg-dash-exposed">0 / 3</span>
                             </div>
                             <div class="kv">
                                 <span class="k">Last submission</span>
-                                <span class="v" id="dash-last">—</span>
+                                <span class="v" id="msg-dash-last">—</span>
                             </div>
                             <div class="row mt">
-                                <button class="btn ghost block" id="test-msg-btn-2">Send Test Message</button>
+                                <button class="btn ghost block" id="msg-test-msg-btn-2">Send Test Message</button>
                             </div>
                             <div class="row mt">
-                                <button class="btn ghost block" id="edit-settings">Edit Settings</button>
+                                <button class="btn ghost block" id="msg-edit-settings">Edit Settings</button>
                             </div>
                         </div>
 
@@ -522,8 +601,8 @@
                             <h2>Install Snippet</h2>
                             <p class="muted">Re-copy this any time you reinstall the snippet.</p>
                             <div class="code-wrapper">
-                                <textarea id="snippet-2" readonly></textarea>
-                                <button class="copy" id="copy-snippet-2">Copy</button>
+                                <textarea id="msg-snippet-2" readonly></textarea>
+                                <button class="copy" id="msg-copy-snippet-2">Copy</button>
                             </div>
                         </div>
 
@@ -545,9 +624,333 @@
 
         </section>
 
+        <!-- ===========================================================
+             SECURITY ALERTS DASHBOARD
+        ============================================================ -->
+        <section id="security-alerts-view" class="hide">
+
+            <div class="page-header">
+                <div>
+                    <span class="hero-badge">Security Alerts</span>
+                    <h1>Security Alerts Dashboard</h1>
+                    <p class="lead">
+                        Manage your dedicated API key for security system alerts.
+                        Requires Telegram to be fully configured with OTP verification.
+                    </p>
+                </div>
+            </div>
+
+            <!-- OVERVIEW -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>Plan</h3>
+                    <p id="sec-disp-plan">Free</p>
+                </div>
+                <div class="stat-card">
+                    <h3>Telegram</h3>
+                    <p id="sec-disp-tg-status"><span class="badge warn">Not Linked</span></p>
+                </div>
+                <div class="stat-card">
+                    <h3>API Key</h3>
+                    <p id="sec-disp-apikey-status"><span class="badge warn">Not Issued</span></p>
+                </div>
+            </div>
+
+            <div class="dashboard-layout">
+
+                <!-- ============ SIDEBAR ============ -->
+                <aside class="dashboard-sidebar">
+
+                    <div class="card">
+                        <h2>Account Information</h2>
+
+                        <div class="kv">
+                            <span class="k">Name</span>
+                            <span class="v" id="sec-disp-name">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">Email</span>
+                            <span class="v" id="sec-disp-email">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">User ID</span>
+                            <span class="v" id="sec-disp-uid">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">Joined</span>
+                            <span class="v" id="sec-disp-created">—</span>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>Telegram Connection</h2>
+                        <p class="lead">
+                            Your Telegram must be linked and verified to issue a Security Alerts API key.
+                        </p>
+
+                        <div id="sec-tg-setup-section">
+                            <div class="kv">
+                                <span class="k">Status</span>
+                                <span class="v" id="sec-tg-link-status"><span class="badge warn">Not Linked</span></span>
+                            </div>
+
+                            <div class="row mt" id="sec-tg-link-steps">
+                                <ol class="steps">
+                                    <li>
+                                        <h3>Open Telegram</h3>
+                                        <p>Search for <strong>@TrigifyXbot</strong> and open the chat.</p>
+                                    </li>
+                                    <li>
+                                        <h3>Link Account</h3>
+                                        <p>Send <code>/config</code> and paste the access code shown below.</p>
+                                    </li>
+                                    <li>
+                                        <h3>Verify OTP</h3>
+                                        <p>When issuing an API key, an OTP will be sent to your Telegram. Enter it to confirm.</p>
+                                    </li>
+                                </ol>
+                            </div>
+
+                            <div class="row mt" id="sec-access-code-section">
+                                <span class="muted">Access code (expires in <span id="sec-access-code-timer">5:00</span>):</span>
+                                <code id="sec-access-code-display">—</code>
+                                <button class="btn ghost" id="sec-regen-access-code">Refresh</button>
+                            </div>
+
+                            <div class="row mt">
+                                <button class="btn" id="sec-tg-check">Check Link</button>
+                            </div>
+                        </div>
+
+                        <div id="sec-tg-linked-section" class="hide">
+                            <div class="kv">
+                                <span class="k">Linked as</span>
+                                <span class="v" id="sec-tg-linked-username">—</span>
+                            </div>
+                            <div class="kv">
+                                <span class="k">Chat ID</span>
+                                <span class="v mono" id="sec-tg-linked-chatid">—</span>
+                            </div>
+                            <div class="row mt">
+                                <button class="btn ghost block" id="sec-tg-unlink">Unlink Telegram</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card" id="sec-apikey-card">
+                        <h2>Security Alerts API Key</h2>
+                        <p class="lead">
+                            A dedicated API key for your security systems. Requires OTP verification via Telegram.
+                        </p>
+
+                        <div id="sec-apikey-not-issued">
+                            <div class="note warn">
+                                <strong>Telegram must be linked and verified</strong> before you can issue a Security Alerts API key.
+                            </div>
+                            <button class="btn block mt" id="sec-issue-apikey-btn" disabled>
+                                Issue API Key (Requires Telegram Link)
+                            </button>
+                        </div>
+
+                        <div id="sec-apikey-otp-section" class="hide">
+                            <p class="lead">An OTP has been sent to your Telegram. Enter it below to confirm.</p>
+                            <label>OTP Code (6 digits)</label>
+                            <input id="sec-otp-input" type="text" placeholder="123456" maxlength="6" pattern="\d{6}">
+                            <div class="row mt">
+                                <button class="btn" id="sec-verify-otp-btn">Verify & Issue API Key</button>
+                                <button class="btn ghost" id="sec-cancel-otp-btn">Cancel</button>
+                            </div>
+                            <p class="muted center">OTP expires in <span id="sec-otp-timer">5:00</span></p>
+                        </div>
+
+                        <div id="sec-apikey-issued" class="hide">
+                            <div class="note ok">
+                                <strong>API Key issued successfully!</strong> Copy and save it — it won't be shown again.
+                            </div>
+                            <div class="api-box">
+                                <code id="sec-apikey-display">—</code>
+                            </div>
+                            <div class="row mt">
+                                <button class="btn ghost" id="sec-copy-apikey">Copy</button>
+                                <button class="btn" id="sec-regenerate-apikey">Regenerate</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </aside>
+
+                <!-- ============ MAIN: installation & testing ============ -->
+                <div class="dashboard-main" id="sec-setup-main">
+
+                    <div class="section-title">
+                        <h2>Installation & Testing</h2>
+                        <p class="muted">Use the API key to send security alerts from your systems.</p>
+                    </div>
+
+                    <div class="card" id="sec-install-section">
+                        <h2>Install Integration</h2>
+                        <p class="lead">
+                            Send a POST request to the endpoint below with your API key and alert data.
+                        </p>
+
+                        <div class="code-wrapper">
+                            <textarea id="sec-snippet" readonly></textarea>
+                            <button class="copy" id="sec-copy-snippet">Copy</button>
+                        </div>
+
+                        <h4>Example Payload</h4>
+                        <div class="code-wrapper">
+                            <textarea id="sec-example-payload" readonly>{
+  "alert_type": "intrusion",
+  "severity": "high",
+  "title": "Motion Detected - Zone 3",
+  "message": "Intrusion detected at perimeter zone 3. Camera 7 activated.",
+  "source": "camera_7",
+  "timestamp": "2026-07-25T14:30:00Z",
+  "metadata": {
+    "zone": "perimeter_3",
+    "camera_id": "cam_7",
+    "confidence": 0.94
+  }
+}</textarea>
+                            <button class="copy" id="sec-copy-example-payload">Copy</button>
+                        </div>
+
+                        <h4>Alert Types</h4>
+                        <div class="alert-types-grid">
+                            <div class="alert-type-card"><span class="alert-icon">🚨</span><strong>Intrusion</strong><span>Unauthorized entry</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">🔓</span><strong>Access Control</strong><span>Door forced/held open</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">📷</span><strong>Camera Motion</strong><span>Motion in restricted zone</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">🔥</span><strong>Fire & Safety</strong><span>Smoke/heat detected</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">⚙️</span><strong>System Health</strong><span>Offline/tamper/low battery</span></div>
+                            <div class="alert-type-card"><span class="alert-icon">⚠️</span><strong>Custom</strong><span>Any custom alert type</span></div>
+                        </div>
+                    </div>
+
+                    <div class="card" id="sec-test-section">
+                        <h2>Test Alert</h2>
+                        <p class="lead">Send a test security alert to verify your Telegram integration.</p>
+
+                        <label>Alert Type</label>
+                        <select id="sec-test-alert-type">
+                            <option value="intrusion">🚨 Intrusion</option>
+                            <option value="access_control">🔓 Access Control</option>
+                            <option value="camera_motion">📷 Camera Motion</option>
+                            <option value="fire_safety">🔥 Fire & Safety</option>
+                            <option value="system_health">⚙️ System Health</option>
+                            <option value="custom">⚠️ Custom</option>
+                        </select>
+
+                        <label>Severity</label>
+                        <select id="sec-test-severity">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+
+                        <label>Title</label>
+                        <input id="sec-test-title" type="text" placeholder="Test Alert from Dashboard">
+
+                        <label>Message</label>
+                        <textarea id="sec-test-message" rows="3" placeholder="This is a test security alert from TrigifyX."></textarea>
+
+                        <div class="row mt">
+                            <button class="btn" id="sec-send-test-alert">Send Test Alert</button>
+                            <span class="badge" id="sec-test-alert-count">3 test alerts left</span>
+                        </div>
+                    </div>
+
+                    <div class="card" id="sec-recent-alerts-section">
+                        <h2>Recent Alerts</h2>
+                        <p class="muted">Last 10 security alerts sent via your API key.</p>
+                        <ul class="submission-log" id="sec-alerts-log">
+                            <li class="empty">No alerts sent yet — they'll appear here and in Telegram.</li>
+                        </ul>
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+        <!-- ===========================================================
+             SETTINGS
+        ============================================================ -->
+        <section id="settings-view" class="hide">
+            <div class="page-header">
+                <div>
+                    <span class="hero-badge">Settings</span>
+                    <h1>Account Settings</h1>
+                    <p class="lead">Manage your TrigifyX account preferences.</p>
+                </div>
+            </div>
+
+            <div class="dashboard-layout">
+                <aside class="dashboard-sidebar">
+                    <div class="card">
+                        <h2>Account Information</h2>
+
+                        <div class="kv">
+                            <span class="k">Name</span>
+                            <span class="v" id="set-disp-name">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">Email</span>
+                            <span class="v" id="set-disp-email">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">User ID</span>
+                            <span class="v" id="set-disp-uid">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">Joined</span>
+                            <span class="v" id="set-disp-created">—</span>
+                        </div>
+                        <div class="kv">
+                            <span class="k">Plan</span>
+                            <span class="v" id="set-disp-plan">Free</span>
+                        </div>
+                    </div>
+                </aside>
+
+                <div class="dashboard-main">
+                    <div class="section-title">
+                        <h2>Profile Settings</h2>
+                        <p class="muted">Update your account details.</p>
+                    </div>
+
+                    <div class="card">
+                        <h2>Edit Profile</h2>
+
+                        <label>Full Name</label>
+                        <input id="set-name" type="text" placeholder="John Doe">
+
+                        <label>Telegram Username</label>
+                        <input id="set-telegram" type="text" placeholder="@username">
+
+                        <div class="row mt">
+                            <button class="btn" id="set-save-profile">Save Changes</button>
+                        </div>
+                    </div>
+
+                    <div class="card mt">
+                        <h2>Danger Zone</h2>
+
+                        <div class="note danger">
+                            <strong>Delete Account</strong>
+                            <p>Permanently delete your TrigifyX account and all associated data. This action cannot be undone.</p>
+                            <button class="btn ghost block mt" id="set-delete-account">Delete Account</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
     </main>
 
-    <footer class="footer">
+    <footer class="footer" id="page-footer">
         <div class="footer-inner">
             <div class="footer-brand">
                 <img src="images/trigifyX.png" alt="TrigifyX">
